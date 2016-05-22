@@ -1,6 +1,39 @@
 #ifndef TINY_TASK_SCHEDULER_HEADER
 #define TINY_TASK_SCHEDULER_HEADER
 
+/*
+A Tiny task scheduler. (v0.1 pre alpha)
+
+This is a C implimentation of a task steal/split schedular.
+    NOTE: Not guaranteed order of processing.
+
+This is inspired from:
+    http://www.pouet.net/topic.php?which=8602&page=1
+    http://software.intel.com/en-us/articles/do-it-yourself-game-task-scheduling/
+        ( http://software.intel.com/en-us/blogs/2010/08/20/nulstein-v2-plog-presenting-through-a-blog/ )
+
+But with a few core diferences:
+1) The task is a fixed sized struct, the the system takes a copy of it.
+    This makes splitting easyer, but loses a lot of flexability.
+2) This is in C.
+3) I dont have a sort (yet)
+4) This deos not help (yet) with memory allocation.
+
+This is mainly for things such as games and demos, as the workers dont really want to yeild.
+The workers by default spin on stealing work if they have none to do them selfs.
+If there is 1 task on the queue when trying to steal, then it will try to split that task.
+
+If Yeilding is desirable (Say, and Mobile game using a 'Race to Sleep' patteren),
+then that is possible using tts_may_yeild;
+
+TODO:
+* per worker memory heap functions.
+* sort (merge sort) (require memort because it needs a tmp space)
+* system v (linux, mac, android, ios) support.
+* tests
+
+*/
+
 #include <stdlib.h> // for size_t
 
 typedef struct {
@@ -28,12 +61,14 @@ typedef union {
     unsigned short  us[2];
     char            c[4];
     unsigned char   uc[4];
-} tts_user_data;
+} tts_user_data; // NOTE: 1 pointer in size
 
 typedef volatile int tts_busy_flag;
 
-typedef void(*tts_op)(tts_user_data i_args[5]);
-typedef tts_bool(*tts_split)(tts_user_data i_new[5], tts_user_data i_orig[5]);
+#define tts_is_done(flag)  (0 == (flag))
+
+typedef void (*tts_op)(tts_user_data i_args[5]);
+typedef tts_bool (*tts_split)(tts_user_data i_new[5], tts_user_data i_orig[5]);
 
 typedef struct {
     tts_busy_flag*  flag;
@@ -42,19 +77,36 @@ typedef struct {
     tts_user_data   args[5];
 } tts_task; // NOTE: 8 pointers in size
 
-#define tts_is_done(flag)  (0 == (flag))
-
+// Start the scheduler with an optional config.
+//  Pass NULL in i_cfg for all default values.
 void tts_start(const tts_config* i_cfg);
-void tts_may_yeild(tts_bool i_value);
 
+// This adds task to the current workers queue.
+// It copys the values from the task, so it does not need
+// to persist past this call.
+// NOTE: Not guaranteed order of processing.
 void tts_enqueue(const tts_task* i_task);
+
+// This allows the system to process more tasks
+// until this flag is done.
 void tts_wait_until(tts_busy_flag* i_flag);
 
+// This permits the system to yeild (or not) to the OS.
+// This should be usful for times when it is safe to yeild to the OS
+// when there is little to no work left to do for a time.
+// IE: allow yeilding while waiting for the screen to flip, then
+// disallowing it again once the next farms processing starts.
+void tts_may_yeild(tts_bool i_value);
+
+// Foreach.
+//
 void tts_foreach(void* i_start, void* i_end, size_t i_step, void(*i_op)(void*));
 void tts_foreach_async(void* i_start, void* i_end, size_t i_step, void(*i_op)(void*), tts_busy_flag* i_flag);
 void tts_foreach_user(void* i_start, void* i_end, size_t i_step, void(*i_op)(tts_user_data, void*), tts_user_data i_ud);
 void tts_foreach_user_async(void* i_start, void* i_end, size_t i_step, void(*i_op)(tts_user_data, void*), tts_user_data i_ud, tts_busy_flag* i_flag);
 
+// Shuts down all workers.
+// frees all memory.
 void tts_stop();
 
 #endif//TINY_TASK_SCHEDULER_HEADER
