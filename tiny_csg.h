@@ -88,6 +88,18 @@ void tcsg_polygon_vector_free(tcsg_polygon_vector* i_self);
 tcsg_polygon_vector tcsg_union(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
 tcsg_polygon_vector tcsg_intersect(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
 tcsg_polygon_vector tcsg_subtract(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
+void tcsg_split(const tcsg_plane* i_p, tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_front, tcsg_polygon_vector* o_back);
+
+enum {
+    tcsg_k_py,
+    tcsg_k_ny,
+    tcsg_k_px,
+    tcsg_k_nx,
+    tcsg_k_pz,
+    tcsg_k_nz,
+    tcsg_k_div_max
+};
+void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k_div_max]);
 
 void tcsg_from_tris(tcsg_vert* i_verts, unsigned short* i_index, int i_tri_count, tcsg_user_data i_ud, tcsg_polygon_vector* o_v);
 tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const tcsg_f3* i_rad);
@@ -487,6 +499,7 @@ int tcsg__build_bsp_r(tcsg__bsp* i_self, tcsg_polygon_vector* i_list)
 tcsg__bsp tcsg__build_bsp(tcsg_polygon_vector* i_list)
 {
     tcsg__bsp o = { 0 };
+    tcsg__sb_reserve(o.nodes, tcsg__sb_count(i_list->polys));
     tcsg__build_bsp_r(&o, i_list);
     return o;
 }
@@ -572,6 +585,53 @@ tcsg_polygon_vector tcsg_subtract(tcsg_polygon_vector* i_a, tcsg_polygon_vector*
     return aob;
 }
 
+void tcsg_split(const tcsg_plane* i_p, tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_front, tcsg_polygon_vector* o_back)
+{
+    tcsg_polygon_vector f = { 0 };
+    tcsg_polygon_vector b = { 0 };
+
+    if (!o_front) {
+        o_front = &f;
+    }
+    if (!o_back) {
+        o_back = &b;
+    }
+
+    tcsg__split(i_p, tcsg__sb_begin(i_list->polys), tcsg__sb_end(i_list->polys), i_list->max_vert_count, o_front, o_front, o_back, o_back);
+
+    if (o_front == &f) {
+        tcsg_polygon_vector_free(&f);
+    }
+    if (o_back == &b) {
+        tcsg_polygon_vector_free(&b);
+    }
+}
+
+void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k_div_max])
+{
+    const tcsg_f3 data[tcsg_k_div_max] = {
+        { 0, 1, 0 },
+        { 0, -1, 0 },
+        { 1, 0, 0 },
+        { -1, 0, 0 } ,
+        { 0, 0, 1 },
+        { 0, 0, -1 } ,
+    };
+    const float k_45deg = 0.4f;
+
+    for (tcsg_polygon** pi = tcsg__sb_begin(i_list->polys), **pe = tcsg__sb_end(i_list->polys); pi != pe; ++pi) {
+        for (int i = 0; i < tcsg_k_div_max; ++i) {
+            const float dp = tcsg_f3_dot(data + i, &(*pi)->plane.normal);
+            if (k_45deg < dp) {
+                if (o_dirs[i]) {
+                    tcsg_polygon_vector_pushback(o_dirs[i], *pi);
+                    break;
+                }
+            }
+        }
+    }
+}
+
 void tcsg_from_tris(tcsg_vert* i_verts, unsigned short* i_index, int i_tri_count, tcsg_user_data i_ud, tcsg_polygon_vector* o_v)
 {
     tcsg__sb_reserve_extra(o_v->polys, i_tri_count);
@@ -640,6 +700,26 @@ int main(int i_argc, char** i_argv)
     tcsg_polygon_vector aUb = tcsg_union(&a, &b);
     tcsg_polygon_vector aIb = tcsg_intersect(&a, &b);
     tcsg_polygon_vector aSb = tcsg_subtract(&a, &b);
+
+    {
+        tcsg_polygon_vector _aUb = { 0 };
+        tcsg_polygon_vector _aIb = { 0 };
+        tcsg_polygon_vector _aSb = { 0 };
+
+        tcsg_polygon_vector* t[tcsg_k_div_max] = { 0 };
+        t[0] = &_aUb;
+        tcsg_divide(&aUb, t);
+
+        t[0] = &_aIb;
+        tcsg_divide(&aIb, t);
+
+        t[0] = &_aSb;
+        tcsg_divide(&aSb, t);
+
+        tcsg_polygon_vector_free(&_aUb);
+        tcsg_polygon_vector_free(&_aIb);
+        tcsg_polygon_vector_free(&_aSb);
+    }
 
     tcsg_polygon_vector_free(&a);
     tcsg_polygon_vector_free(&b);
