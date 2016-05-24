@@ -11,6 +11,8 @@ This is inspired from:
     http://www.pouet.net/topic.php?which=8602&page=1
     http://software.intel.com/en-us/articles/do-it-yourself-game-task-scheduling/
         ( http://software.intel.com/en-us/blogs/2010/08/20/nulstein-v2-plog-presenting-through-a-blog/ )
+and
+        https://github.com/nothings/stb -- lib in a header
 
 But with a few core diferences:
 1) The task is a fixed sized struct, the the system takes a copy of it.
@@ -71,10 +73,10 @@ typedef void (*tts_op)(tts_user_data i_args[5]);
 typedef tts_bool (*tts_split)(tts_user_data i_new[5], tts_user_data i_orig[5]);
 
 typedef struct {
-    tts_busy_flag*  flag;
-    tts_op          op;
-    tts_split       split;
-    tts_user_data   args[5];
+    tts_busy_flag*  flag;       // Optional. 
+    tts_op          op;         // Manditory.
+    tts_split       split;      // Optional.
+    tts_user_data   args[5];    // Optional.
 } tts_task; // NOTE: 8 pointers in size
 
 // Start the scheduler with an optional config.
@@ -260,28 +262,33 @@ static tts_bool tts__stealing(tts_tasks* i_lhs, tts_tasks* i_rhs)
     tts__lock(&i_rhs->lock);
     switch (i_rhs->count)
     {
-    case 0: break;
-    case 1: {
-        tts_task t = i_rhs->tasks[0];
-        if (t.split) {
-            if (t.split(t.args, i_rhs->tasks[0].args)) {
-                i_lhs->tasks[i_lhs->count++] = t;
-                if (t.flag) {
-                    tts__inc_flag(t.flag, +1);
+        case 0: break;
+        case 1: {
+            tts_task t = i_rhs->tasks[0];
+            if (t.split) {
+                if (t.split(t.args, i_rhs->tasks[0].args)) {
+                    i_lhs->tasks[i_lhs->count++] = t;
+                    if (t.flag) {
+                        tts__inc_flag(t.flag, +1);
+                    }
+                    o = tts_true;
                 }
-                o = tts_true;
             }
-        }
-    } break;
-    default: {
-        int grab = (i_rhs->count + 1) / 2;
+        } break;
+        default: {
+            int grab = (i_rhs->count + 1) / 2;
 
-        for (int i = 0; i < grab; ++i) {
-            i_lhs->tasks[i_lhs->count++] = i_rhs->tasks[--i_rhs->count];
-        }
+            memcpy(i_lhs->tasks + i_lhs->count, i_rhs->tasks + (i_rhs->count - grab), sizeof(tts_task) * grab);
+            i_lhs->count += grab;
+            i_rhs->count -= grab;
 
-        o = tts_true;
-    }
+            //// NOTE: might be better with a memcpy
+            //for (int i = 0; i < grab; ++i) {
+            //    i_lhs->tasks[i_lhs->count++] = i_rhs->tasks[--i_rhs->count];
+            //}
+
+            o = tts_true;
+        }
     }
     tts__unlock(&i_rhs->lock);
     tts__unlock(&i_lhs->lock);
