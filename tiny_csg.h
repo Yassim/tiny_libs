@@ -1,5 +1,5 @@
 #define TINY_CSG_IMPLEMENTATION
-#define TINY_CSG_TEST
+#define TINY_CSG_GLDEMO
 
 #ifndef TINY_CSG_HEADER
 #define TINY_CSG_HEADER
@@ -10,6 +10,25 @@ This is inspired from:
 https://github.com/evanw/csg.js
 and
 https://github.com/nothings/stb -- lib in a header
+
+Main differences between this and csg.js
+1) This is in C (so I do more memory management)
+2) The BSP node do not hold a reference to its co-planer polygons.
+3) The BSP nodes are in an array, using indcies for pointers.
+4) The the test array in the plane_split allocated once (and prefereably on the stack)
+5) There is only 1 BSP clip function, which handel both inside and outside.
+
+NOTES:
+* Poloygons are treated as immutable and are reference counted between vectors.
+
+
+TODO:
+Make Vector user overridable.
+Make Vertex user overridable.
+Make Memory functions user overrideable.
+Make polygone ref counting atomic if need be.
+Add AABB to polygone and polygon_vector?
+Add poly mergeing
 
 */
 
@@ -30,7 +49,9 @@ tcsg_f3 tcsg_f3_lerp(const tcsg_f3* i_0, const tcsg_f3* i_1, float i_0to1);
 tcsg_f3 tcsg_f3_cross(const tcsg_f3* i_a, const tcsg_f3* i_b);
 float   tcsg_f3_dot(const tcsg_f3* i_a, const tcsg_f3* i_b);
 tcsg_f3 tcsg_f3_normalise(const tcsg_f3* i_a);
+tcsg_f3 tcsg_f3_invert(const tcsg_f3* i_a);
 tcsg_f3 tcsg_f3_sub(const tcsg_f3* i_a, const tcsg_f3* i_b);
+tcsg_f3 tcsg_f3_scale(const tcsg_f3* i_a, float i_f);
 tcsg_f3 tcsg_f3_new(float i_x, float i_y, float i_z);
 
 // Vertex
@@ -88,6 +109,7 @@ void tcsg_polygon_vector_free(tcsg_polygon_vector* i_self);
 tcsg_polygon_vector tcsg_union(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
 tcsg_polygon_vector tcsg_intersect(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
 tcsg_polygon_vector tcsg_subtract(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
+tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_a);
 void tcsg_split(const tcsg_plane* i_p, tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_front, tcsg_polygon_vector* o_back);
 
 enum {
@@ -104,6 +126,20 @@ void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k
 void tcsg_from_tris(tcsg_vert* i_verts, unsigned short* i_index, int i_tri_count, tcsg_user_data i_ud, tcsg_polygon_vector* o_v);
 tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const tcsg_f3* i_rad);
 
+
+typedef struct {
+    tcsg_user_data  m;
+    int             offset;
+    int             count;
+} tcsg_draw;
+
+typedef struct {
+    tcsg_vert *         verts;
+    unsigned short *    indcies;
+    tcsg_draw *         draws;
+} tcsg_model;
+
+tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list);
 
 #ifdef TINY_CSG_IMPLEMENTATION
 #include <stdlib.h>
@@ -174,6 +210,7 @@ static void * stb__sbgrowf(void *arr, int increment, int itemsize)
 
 
 
+
 tcsg_f3 tcsg_f3_lerp(const tcsg_f3* i_0, const tcsg_f3* i_1, float i_0to1)
 {
     tcsg_f3 o;
@@ -207,12 +244,30 @@ tcsg_f3 tcsg_f3_normalise(const tcsg_f3* i_a)
     return o;
 }
 
+tcsg_f3 tcsg_f3_invert(const tcsg_f3* i_a)
+{
+    tcsg_f3 o;
+    o.x = -i_a->x;
+    o.y = -i_a->y;
+    o.z = -i_a->z;
+    return o;
+}
+
 tcsg_f3 tcsg_f3_sub(const tcsg_f3* i_a, const tcsg_f3* i_b)
 {
     tcsg_f3 o;
     o.x = i_a->x - i_b->x;
     o.y = i_a->y - i_b->y;
     o.z = i_a->z - i_b->z;
+    return o;
+}
+
+tcsg_f3 tcsg_f3_scale(const tcsg_f3* i_a, float i_f)
+{
+    tcsg_f3 o;
+    o.x = i_a->x * i_f;
+    o.y = i_a->y * i_f;
+    o.z = i_a->z * i_f;
     return o;
 }
 
@@ -264,11 +319,12 @@ tcsg_plane tcsg_plane_new(const tcsg_vert* i_a, const tcsg_vert* i_b, const tcsg
 
 void tcsg_plane_invert(tcsg_plane* io_self)
 {
-    float* v = (float*)io_self;
-    for (int i = 0; i < 4; ++i) {
-        v[i] = -v[i];
-    }
+    io_self->normal = tcsg_f3_invert(&io_self->normal);
+    io_self->d = -io_self->d;
 }
+
+
+
 
 tcsg_polygon* tcsg_polygon_new(tcsg_user_data i_ud, int i_count, const tcsg_vert* i_pnts)
 {
@@ -509,7 +565,13 @@ void tcsg__bsp_free(tcsg__bsp* i_self)
     tcsg_free(i_self->nodes);
 }
 
-tcsg_polygon_vector tcsg__clip(int i_inside, tcsg__bsp* i_bsp, int i_node, tcsg_polygon_vector* i_list)
+typedef enum {
+    tcsg__k_outside,
+    tcsg__k_inside,
+    tcsg__k_force_clip_method_int = 0x7fffffff
+} tcsg__clip_method;
+
+tcsg_polygon_vector tcsg__clip(tcsg__clip_method i_inside, tcsg__bsp* i_bsp, int i_node, tcsg_polygon_vector* i_list)
 {
     tcsg_polygon_vector o = { 0 };
 
@@ -549,8 +611,8 @@ tcsg_polygon_vector tcsg_union(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_
 {
     tcsg__bsp ba = tcsg__build_bsp(i_a);
     tcsg__bsp bb = tcsg__build_bsp(i_b);;
-    tcsg_polygon_vector aob = tcsg__clip(0, &bb, 0, i_a);
-    tcsg_polygon_vector boa = tcsg__clip(0, &ba, 0, i_b);
+    tcsg_polygon_vector aob = tcsg__clip(tcsg__k_outside, &bb, 0, i_a);
+    tcsg_polygon_vector boa = tcsg__clip(tcsg__k_outside, &ba, 0, i_b);
 
     tcsg_polygon_vector_concat(&aob, &boa);
     tcsg_polygon_vector_free(&boa);
@@ -562,8 +624,8 @@ tcsg_polygon_vector tcsg_intersect(tcsg_polygon_vector* i_a, tcsg_polygon_vector
 {
     tcsg__bsp ba = tcsg__build_bsp(i_a);
     tcsg__bsp bb = tcsg__build_bsp(i_b);;
-    tcsg_polygon_vector aib = tcsg__clip(1, &bb, 0, i_a);
-    tcsg_polygon_vector bia = tcsg__clip(1, &ba, 0, i_b);
+    tcsg_polygon_vector aib = tcsg__clip(tcsg__k_inside, &bb, 0, i_a);
+    tcsg_polygon_vector bia = tcsg__clip(tcsg__k_inside, &ba, 0, i_b);
 
     tcsg_polygon_vector_concat(&aib, &bia);
     tcsg_polygon_vector_free(&bia);
@@ -575,8 +637,8 @@ tcsg_polygon_vector tcsg_subtract(tcsg_polygon_vector* i_a, tcsg_polygon_vector*
 {
     tcsg__bsp ba = tcsg__build_bsp(i_a);
     tcsg__bsp bb = tcsg__build_bsp(i_b);
-    tcsg_polygon_vector aob = tcsg__clip(0, &bb, 0, i_a);
-    tcsg_polygon_vector bia = tcsg__clip(1, &ba, 0, i_b);
+    tcsg_polygon_vector aob = tcsg__clip(tcsg__k_outside, &bb, 0, i_a);
+    tcsg_polygon_vector bia = tcsg__clip(tcsg__k_inside, &ba, 0, i_b);
 
     tcsg_polygon_vector_invert(&bia);
     tcsg_polygon_vector_concat(&aob, &bia);
@@ -613,9 +675,9 @@ void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k
         { 0, 1, 0 },
         { 0, -1, 0 },
         { 1, 0, 0 },
-        { -1, 0, 0 } ,
+        { -1, 0, 0 },
         { 0, 0, 1 },
-        { 0, 0, -1 } ,
+        { 0, 0, -1 },
     };
     const float k_45deg = 0.4f;
 
@@ -631,6 +693,135 @@ void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k
         }
     }
 }
+
+#include <stdlib.h>
+
+int tcsg__plane_sort_cmp(const void* i_a, const void* i_b)
+{
+    const tcsg_plane a = *(const tcsg_plane*)i_a;
+    const tcsg_plane b = *(const tcsg_plane*)i_b;
+    const tcsg_f3 pb = tcsg_f3_scale(&b.normal, b.d);
+    const float t = (tcsg_f3_dot(&a.normal, &pb) - a.d);
+    return (t < -tcsg_k_epsilon) ? -1 : ((t > tcsg_k_epsilon) ? 1 : 0);
+}
+
+int tcsg__poly_sort_cmp(const void* i_a, const void* i_b)
+{
+    const tcsg_polygon* a = *(const tcsg_polygon**)i_a;
+    const tcsg_polygon* b = *(const tcsg_polygon**)i_b;
+    return tcsg__plane_sort_cmp(&a->plane, &b->plane);
+}
+
+typedef struct {
+    tcsg_vert a, b;
+} tcsg__edge;
+
+int cmpfloats(const float* i_a, const float * i_b, size_t i_n)
+{
+    do {
+        const float d = *i_a++ - *i_b++;
+        if (fabsf(d) > tcsg_k_epsilon)
+            return 1;
+
+    } while (--i_n);
+
+    return 0;
+}
+tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
+{
+    tcsg_polygon_vector o = { 0 };
+
+    tcsg_polygon*** list_of_lists = 0;
+
+    // sort into work groups
+    // for all polys
+    for (tcsg_polygon** pi = tcsg__sb_begin(i_list->polys), **pe = tcsg__sb_end(i_list->polys); pi != pe; ++pi) {
+        // for all lists
+        for (tcsg_polygon*** li = tcsg__sb_begin(list_of_lists), *** le = tcsg__sb_end(list_of_lists); li != le; ++li) {
+            // if this poly is co_planer to this first. then it belongs in this list.
+            if (0 == tcsg__plane_sort_cmp(&(*pi)->plane, &((*li)[0]->plane))) {
+                tcsg__sb_pushback((*li), *pi);
+                goto next_poly;
+            }
+        }
+
+        // new list requried;
+        {
+            tcsg_polygon** nl = 0;
+            tcsg__sb_pushback(nl, *pi);
+            tcsg__sb_pushback(list_of_lists, nl);
+        }
+
+        next_poly:{}
+    }
+
+    // mereg each group
+    for (tcsg_polygon*** li = tcsg__sb_begin(list_of_lists), *** le = tcsg__sb_end(list_of_lists); li != le; ++li) {
+        int c = tcsg__sb_count(*li);
+        if (tcsg__sb_count(*li) < 2) {
+            continue;
+        }
+
+        // search for poly pairs
+        for (tcsg_polygon** poi = tcsg__sb_begin(*li), **poe = tcsg__sb_end(*li)-1; poi != poe; ++poi) {
+
+            tcsg__edge* edges = 0;
+
+            // budil edge list
+            for (int oi = 0, oj = 1; oi < (*poi)->count; ++oi, oj = (oj + 1) % (*poi)->count) {
+                tcsg__edge e;
+                e.a = (*poi)->verts[oi];
+                e.b = (*poi)->verts[oj];
+            
+                tcsg__sb_pushback(edges, e);
+            }
+
+            // search edge list for shared edge
+            for (tcsg_polygon** pii = poi + 1, **pie = tcsg__sb_end(*li); pii != pie; ++pii) {
+                for (int ii = 0, ij = 1; ii < (*pii)->count; ++ii, ij = (ij + 1) % (*pii)->count) {
+                    tcsg__edge e;
+                    e.a = (*pii)->verts[ii];
+                    e.b = (*pii)->verts[ij];
+
+                    for (tcsg__edge* ei = tcsg__sb_begin(edges); ei != tcsg__sb_end(edges); ++ei) {
+                        //if (0 == memcmp(ei, &e, sizeof(e))) {
+                        if (0 == cmpfloats(ei, &e, 12)) {
+                            printf("Merge");
+                        }
+                    }
+                }
+            }
+
+            tcsg__sb_free(edges);
+
+            //for (tcsg_polygon** pii = poi+1, **pie = tcsg__sb_end(*li); pii != pie; ++pii) {
+            //    // search for pair of consecutive verts in poly pairs.
+            //    const tcsg_vert *vo = (*poi)->verts;
+            //    const tcsg_vert *vi = (*pii)->verts;
+
+            //    for (int oi = 0, oj = 1; oi < (*poi)->count; ++oi, oj = (oj + 1) % (*poi)->count) {
+            //        for (int ii = 0, ij = 1; ii < (*pii)->count; ++ii, ij = (ij + 1) % (*pii)->count) {
+            //            if ((0 == memcmp(vo + oi, vi + ii, sizeof(tcsg_vert)))
+            //            && (0 == memcmp(vo + oj, vi + ij, sizeof(tcsg_vert)))) {
+            //                // test to see if the join lins match
+            //                printf("Merge\n");
+            //            }
+            //        }
+            //    }
+            //}
+        }
+    }
+
+    // for all lists
+    for (tcsg_polygon*** li = tcsg__sb_begin(list_of_lists), *** le = tcsg__sb_end(list_of_lists); li != le; ++li) {
+        for (tcsg_polygon** pi = tcsg__sb_begin(*li), **pe = tcsg__sb_end(*li); pi != pe; ++pi) {
+            tcsg_polygon_decref(*pi);
+        }
+    }
+
+    return o;
+}
+
 
 void tcsg_from_tris(tcsg_vert* i_verts, unsigned short* i_index, int i_tri_count, tcsg_user_data i_ud, tcsg_polygon_vector* o_v)
 {
@@ -650,12 +841,12 @@ tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const 
         int flags[4];
         tcsg_f3 normal;
     } const data[6] = {
-        {{0, 4, 6, 2}, {-1, 0, 0}},
-        {{1, 3, 7, 5}, {1, 0, 0}},
-        {{0, 1, 5, 4}, {0, -1, 0}},
-        {{2, 6, 7, 3}, {0, 1, 0}},
-        {{0, 2, 3, 1}, {0, 0, -1}},
-        {{4, 5, 7, 6}, {0, 0, 1}}
+        {{0, 4, 6, 2}, {-1,  0,  0}},
+        {{1, 3, 7, 5}, { 1,  0,  0}},
+        {{0, 1, 5, 4}, { 0, -1,  0}},
+        {{2, 6, 7, 3}, { 0,  1,  0}},
+        {{0, 2, 3, 1}, { 0,  0, -1}},
+        {{4, 5, 7, 6}, { 0,  0,  1}}
     };
 
     const tcsg_f3 zero = { 0 };
@@ -685,6 +876,66 @@ tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const 
     return o;
 }
 
+unsigned short tcsg__add_unqiue_vert(tcsg_model* io_m, const tcsg_vert* i_v)
+{
+    for (tcsg_vert* i = tcsg__sb_begin(io_m->verts), *e = tcsg__sb_end(io_m->verts); i != e; ++i) {
+        if (0 == memcmp(i, i_v, sizeof(*i_v))) {
+            return i - tcsg__sb_begin(io_m->verts);
+        }
+    }
+
+    {
+        unsigned short o = tcsg__sb_count(io_m->verts);
+        tcsg__sb_pushback(io_m->verts, *i_v);
+        return o;
+    }
+}
+
+int tcsg__poly_sort_user_cmp(const void* i_a, const void* i_b)
+{
+    const tcsg_polygon* a = *(const tcsg_polygon**)i_a;
+    const tcsg_polygon* b = *(const tcsg_polygon**)i_b;
+    return (a->user.p < b->user.p) - (b->user.p < a->user.p);
+}
+
+tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list)
+{
+    tcsg_model o = { 0 };
+    tcsg_draw d = { 0 };
+
+//    qsort(&i_list->polys, tcsg__sb_count(i_list->polys), sizeof(tcsg_vert), tcsg__poly_sort_user_cmp);
+    d.m = i_list->polys[0]->user;
+    for (tcsg_polygon ** i = tcsg__sb_begin(i_list->polys), ** e = tcsg__sb_end(i_list->polys); i != e; ++i) {
+
+        if (d.m.p != (*i)->user.p) {
+            int c = tcsg__sb_count(o.indcies);
+            d.count = c - d.offset;
+            tcsg__sb_pushback(o.draws, d);
+            d.offset = c;
+            d.m = (*i)->user;
+        }
+
+        {
+            tcsg_polygon * p = *i;
+            unsigned short a = tcsg__add_unqiue_vert(&o, p->verts + 0);
+            unsigned short l = tcsg__add_unqiue_vert(&o, p->verts + 1);
+
+            for (tcsg_vert* v = p->verts + 2, *ve = p->verts + p->count; v != ve; ++v) {
+                unsigned short j = tcsg__add_unqiue_vert(&o, v);
+
+                tcsg__sb_reserve_extra(o.indcies, 3);
+                tcsg__sb_pushback(o.indcies, a);
+                tcsg__sb_pushback(o.indcies, l);
+                tcsg__sb_pushback(o.indcies, j);
+                l = j;
+            }
+        }
+    }
+    d.count = tcsg__sb_count(o.indcies) - d.offset;
+    tcsg__sb_pushback(o.draws, d);
+
+    return o;
+}
 
 #endif//TINY_CSG_IMPLEMENTATION
 
@@ -721,6 +972,11 @@ int main(int i_argc, char** i_argv)
         tcsg_polygon_vector_free(&_aSb);
     }
 
+    {
+        tcsg_polygon_vector aUb_m = tcsg_merge(&aUb);
+        tcsg_polygon_vector_free(&aUb_m);
+    }
+
     tcsg_polygon_vector_free(&a);
     tcsg_polygon_vector_free(&b);
     tcsg_polygon_vector_free(&aUb);
@@ -731,5 +987,267 @@ int main(int i_argc, char** i_argv)
 }
 
 #endif//TINY_CSG_TEST
+
+#ifdef TINY_CSG_GLDEMO
+
+#if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)
+    #define WIN32_LEAN_AND_MEAN
+    #define WIN32_EXTRA_LEAN
+    #include <windows.h>
+    #include <mmsystem.h>
+    #include <GL/gl.h>
+    #include <GL/glu.h>
+
+#pragma comment(lib, "opengl32.lib")
+#pragma comment(lib, "glu32.lib")
+
+typedef struct
+{
+    //---------------
+    HINSTANCE   hInstance;
+    HDC         hDC;
+    HGLRC       hRC;
+    HWND        hWnd;
+    //---------------
+    int         full;
+    //---------------
+    char        wndclass[4];	// window class and title :)
+    //---------------
+} tcsg__wininfo;
+
+static const PIXELFORMATDESCRIPTOR pfd =
+{
+    sizeof(PIXELFORMATDESCRIPTOR),
+    1,
+    PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER,
+    PFD_TYPE_RGBA,
+    32,
+    0, 0, 0, 0, 0, 0, 8, 0,
+    0, 0, 0, 0, 0,  // accum
+    32,             // zbuffer
+    0,              // stencil!
+    0,              // aux
+    PFD_MAIN_PLANE,
+    0, 0, 0, 0
+};
+
+static tcsg__wininfo wininfo = { 0, 0, 0, 0, 0,
+{ 'i', 'q', '_', 0 }
+};
+
+#define XRES 800
+#define YRES 600
+
+static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+    // salvapantallas
+    if (uMsg == WM_SYSCOMMAND && (wParam == SC_SCREENSAVE || wParam == SC_MONITORPOWER))
+        return(0);
+
+    // boton x o pulsacion de escape
+    if (uMsg == WM_CLOSE || uMsg == WM_DESTROY || (uMsg == WM_KEYDOWN && wParam == VK_ESCAPE))
+    {
+        PostQuitMessage(0);
+        return(0);
+    }
+
+    if (uMsg == WM_CHAR)
+    {
+        if (wParam == VK_ESCAPE)
+        {
+            PostQuitMessage(0);
+            return(0);
+        }
+    }
+
+    return(DefWindowProc(hWnd, uMsg, wParam, lParam));
+}
+
+int tscg_platform_init()
+{
+    unsigned int	PixelFormat;
+    DWORD			dwExStyle, dwStyle;
+    DEVMODE			dmScreenSettings;
+    RECT			rec;
+
+    WNDCLASS		wc;
+
+    wininfo.hInstance = GetModuleHandle(0);
+
+    ZeroMemory(&wc, sizeof(WNDCLASS));
+    wc.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = WndProc;
+    wc.hInstance = wininfo.hInstance;
+    wc.lpszClassName = wininfo.wndclass;
+
+    if (!RegisterClass(&wc))
+        return(0);
+
+    if (wininfo.full)
+    {
+        dmScreenSettings.dmSize = sizeof(DEVMODE);
+        dmScreenSettings.dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT;
+        dmScreenSettings.dmBitsPerPel = 32;
+        dmScreenSettings.dmPelsWidth = XRES;
+        dmScreenSettings.dmPelsHeight = YRES;
+        if (ChangeDisplaySettings(&dmScreenSettings, CDS_FULLSCREEN) != DISP_CHANGE_SUCCESSFUL)
+            return(0);
+        dwExStyle = WS_EX_APPWINDOW;
+        dwStyle = WS_VISIBLE | WS_POPUP;// | WS_CLIPSIBLINGS | WS_CLIPCHILDREN;
+        ShowCursor(0);
+    }
+    else
+    {
+        dwExStyle = WS_EX_APPWINDOW | WS_EX_WINDOWEDGE;
+        dwStyle = WS_VISIBLE | WS_CAPTION | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | WS_SYSMENU;
+    }
+
+    rec.left = 0;
+    rec.top = 0;
+    rec.right = XRES;
+    rec.bottom = YRES;
+    AdjustWindowRect(&rec, dwStyle, 0);
+
+    wininfo.hWnd = CreateWindowEx(dwExStyle, wc.lpszClassName, "avada kedabra!", dwStyle,
+        (GetSystemMetrics(SM_CXSCREEN) - rec.right + rec.left) >> 1,
+        (GetSystemMetrics(SM_CYSCREEN) - rec.bottom + rec.top) >> 1,
+        rec.right - rec.left, rec.bottom - rec.top, 0, 0, wininfo.hInstance, 0);
+    if (!wininfo.hWnd)
+        return(0);
+
+    if (!(wininfo.hDC = GetDC(wininfo.hWnd)))
+        return(0);
+
+    if (!(PixelFormat = ChoosePixelFormat(wininfo.hDC, &pfd)))
+        return(0);
+
+    if (!SetPixelFormat(wininfo.hDC, PixelFormat, &pfd))
+        return(0);
+
+    if (!(wininfo.hRC = wglCreateContext(wininfo.hDC)))
+        return(0);
+
+    if (!wglMakeCurrent(wininfo.hDC, wininfo.hRC))
+        return(0);
+
+    return(1);
+}
+int tscg_platform_tick()
+{
+    int done = 0;
+    MSG         msg;
+
+    while (PeekMessage(&msg, 0, 0, 0, PM_REMOVE))
+    {
+        if (msg.message == WM_QUIT) done = 1;
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    SwapBuffers(wininfo.hDC);
+
+    return !done;
+}
+void tscg_platform_shutdown()
+{
+    if (wininfo.hRC)
+    {
+        wglMakeCurrent(0, 0);
+        wglDeleteContext(wininfo.hRC);
+    }
+
+    if (wininfo.hDC) ReleaseDC(wininfo.hWnd, wininfo.hDC);
+    if (wininfo.hWnd) DestroyWindow(wininfo.hWnd);
+
+    UnregisterClass(wininfo.wndclass, wininfo.hInstance);
+
+    if (wininfo.full)
+    {
+        ChangeDisplaySettings(0, 0);
+        ShowCursor(1);
+    }
+}
+
+#endif
+
+int main(int i_argc, char** i_argv)
+{
+    const tcsg_f3 one = { 1.f, 1.f, 1.f };
+    tcsg_user_data m = { 0 };
+    tcsg_polygon_vector a = tcsg_cube(m, NULL, NULL);
+    tcsg_polygon_vector b = tcsg_cube(m, &one, NULL);
+
+    tcsg_polygon_vector aUb = tcsg_union(&a, &b);
+    tcsg_polygon_vector aIb = tcsg_intersect(&a, &b);
+    tcsg_polygon_vector aSb = tcsg_subtract(&a, &b);
+
+    tcsg_model am = tcsg_new_model(&a);
+    tcsg_model aUbm = tcsg_new_model(&aUb);
+    tcsg_model aIbm = tcsg_new_model(&aIb);
+    tcsg_model aSbm = tcsg_new_model(&aSb);
+
+    tcsg_polygon_vector_free(&a);
+    tcsg_polygon_vector_free(&b);
+    tcsg_polygon_vector_free(&aUb);
+    tcsg_polygon_vector_free(&aIb);
+    tcsg_polygon_vector_free(&aSb);
+
+    tscg_platform_init();
+    while (tscg_platform_tick())
+    {
+
+#define fzn  0.005f
+#define fzf  1000.0f
+
+        static const float projectionmatrix[16] = {
+            1.0f, 0.00f, 0.0f, 0.0f,
+            0.0f, 1.25f, 0.0f, 0.0f,
+            0.0f, 0.00f, -(fzf + fzn) / (fzf - fzn), -1.0f,
+            0.0f, 0.00f, -2.0f*fzf*fzn / (fzf - fzn), 0.0f };
+
+
+        static float ftime = 0.0f;// 0.001f*(float)itime;
+        ftime += 0.01f;
+
+        // animate
+        float pos[3] = { 3.0f*cosf(ftime*1.0f),
+            3.0f*cosf(ftime*0.6f),
+            3.0f*sinf(ftime*1.0f) };
+        float tar[3] = { 0.0f, 0.0f, 0.0f };
+
+        // render
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glDisable(GL_BLEND);
+        glEnable(GL_LIGHTING);
+        glEnable(GL_LIGHT0);
+        glEnable(GL_NORMALIZE);
+
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(projectionmatrix);
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+        gluLookAt(pos[0], pos[1], pos[2], tar[0], tar[1], tar[2], 0.0f, 1.0f, 0.0f);
+
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+        // draw cube
+        glEnableClientState(GL_VERTEX_ARRAY);
+        glEnableClientState(GL_NORMAL_ARRAY);
+        glVertexPointer(3, GL_FLOAT, sizeof(tcsg_vert), &aSbm.verts->position);
+        glNormalPointer(GL_FLOAT, sizeof(tcsg_vert), &aSbm.verts->normal);
+        glDrawElements(GL_TRIANGLES, aSbm.draws[0].count, GL_UNSIGNED_SHORT, aSbm.indcies);
+        glDisableClientState(GL_NORMAL_ARRAY);
+        glDisableClientState(GL_VERTEX_ARRAY);
+    }
+    tscg_platform_shutdown();
+
+    return 0;
+}
+
+#endif//TINY_CSG_GLDEMO
 
 #endif//TINY_CSG_HEADER
