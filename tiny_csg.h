@@ -383,6 +383,9 @@ void tcsg_polygon_invert(tcsg_polygon* i_a)
         tcsg_vert t = *s;
         *s = *e;
         *e = t;
+
+        s->normal = tcsg_f3_invert(&s->normal);
+        e->normal = tcsg_f3_invert(&e->normal);
     }
     tcsg_plane_invert(&i_a->plane);
 }
@@ -990,6 +993,9 @@ int main(int i_argc, char** i_argv)
 
 #ifdef TINY_CSG_GLDEMO
 
+int g_wire_frame = 0;
+int g_model = 0;
+
 #if defined(_WIN32) || defined(__WIN32__) || defined(__WINDOWS__)
     #define WIN32_LEAN_AND_MEAN
     #define WIN32_EXTRA_LEAN
@@ -1053,11 +1059,20 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 
     if (uMsg == WM_CHAR)
     {
-        if (wParam == VK_ESCAPE)
-        {
-            PostQuitMessage(0);
-            return(0);
+        switch (wParam) {
+            default: break;
+            case VK_ESCAPE:
+                PostQuitMessage(0);
+                return(0);
+            case 'W':
+            case 'w':
+                g_wire_frame = !g_wire_frame;
+                break;
+            case '1': case '2': case '3': case '4':
+                g_model = wParam - '1';
+                break;
         }
+        
     }
 
     return(DefWindowProc(hWnd, uMsg, wParam, lParam));
@@ -1186,6 +1201,13 @@ int main(int i_argc, char** i_argv)
     tcsg_model aIbm = tcsg_new_model(&aIb);
     tcsg_model aSbm = tcsg_new_model(&aSb);
 
+    tcsg_model* models[] = {
+        &am,
+        &aUbm,
+        &aIbm,
+        &aSbm,
+    };
+
     tcsg_polygon_vector_free(&a);
     tcsg_polygon_vector_free(&b);
     tcsg_polygon_vector_free(&aUb);
@@ -1232,14 +1254,19 @@ int main(int i_argc, char** i_argv)
         glLoadIdentity();
         gluLookAt(pos[0], pos[1], pos[2], tar[0], tar[1], tar[2], 0.0f, 1.0f, 0.0f);
 
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        if (g_wire_frame) {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        }
+        else {
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
 
         // draw cube
         glEnableClientState(GL_VERTEX_ARRAY);
         glEnableClientState(GL_NORMAL_ARRAY);
-        glVertexPointer(3, GL_FLOAT, sizeof(tcsg_vert), &aSbm.verts->position);
-        glNormalPointer(GL_FLOAT, sizeof(tcsg_vert), &aSbm.verts->normal);
-        glDrawElements(GL_TRIANGLES, aSbm.draws[0].count, GL_UNSIGNED_SHORT, aSbm.indcies);
+        glVertexPointer(3, GL_FLOAT, sizeof(tcsg_vert), &models[g_model]->verts->position);
+        glNormalPointer(GL_FLOAT, sizeof(tcsg_vert), &models[g_model]->verts->normal);
+        glDrawElements(GL_TRIANGLES, models[g_model]->draws[0].count, GL_UNSIGNED_SHORT, models[g_model]->indcies);
         glDisableClientState(GL_NORMAL_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
     }
