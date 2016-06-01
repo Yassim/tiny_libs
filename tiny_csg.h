@@ -393,7 +393,6 @@ void tcsg_polygon_invert(tcsg_polygon* i_a)
 #define tcsg_alloca(N)  _malloca((N))
 #define tcsg_freea(P)   _freea((P))
 
-//void tcsg__split(const tcsg_plane* i_p, const tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_front, tcsg_polygon_vector* o_co_front, tcsg_polygon_vector* o_co_back, tcsg_polygon_vector* o_back)
 void tcsg__split(const tcsg_plane* i_p, tcsg_polygon** i_begin, tcsg_polygon** i_end, int i_max_vert_count, tcsg_polygon_vector* o_front, tcsg_polygon_vector* o_co_front, tcsg_polygon_vector* o_co_back, tcsg_polygon_vector* o_back)
 {
     tcsg_plane_test* tests = (tcsg_plane_test*)tcsg_alloca(i_max_vert_count * sizeof(tcsg_plane_test));
@@ -699,13 +698,26 @@ void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k
 
 #include <stdlib.h>
 
+int cmpfloats(const float* i_a, const float * i_b, size_t i_n)
+{
+    do {
+        const float d = *i_a++ - *i_b++;
+        if (fabsf(d) > tcsg_k_epsilon)
+            return d < 0 ? -1 : 1;
+
+    } while (--i_n);
+
+    return 0;
+}
+
 int tcsg__plane_sort_cmp(const void* i_a, const void* i_b)
 {
-    const tcsg_plane a = *(const tcsg_plane*)i_a;
-    const tcsg_plane b = *(const tcsg_plane*)i_b;
-    const tcsg_f3 pb = tcsg_f3_scale(&b.normal, b.d);
+    const tcsg_plane* a = (const tcsg_plane*)i_a;
+    const tcsg_plane* b = (const tcsg_plane*)i_b;
+    return cmpfloats(a, b, 4);
+    /*const tcsg_f3 pb = tcsg_f3_scale(&b.normal, b.d);
     const float t = (tcsg_f3_dot(&a.normal, &pb) - a.d);
-    return (t < -tcsg_k_epsilon) ? -1 : ((t > tcsg_k_epsilon) ? 1 : 0);
+    return (t < -tcsg_k_epsilon) ? -1 : ((t > tcsg_k_epsilon) ? 1 : 0);*/
 }
 
 int tcsg__poly_sort_cmp(const void* i_a, const void* i_b)
@@ -719,17 +731,6 @@ typedef struct {
     tcsg_vert a, b;
 } tcsg__edge;
 
-int cmpfloats(const float* i_a, const float * i_b, size_t i_n)
-{
-    do {
-        const float d = *i_a++ - *i_b++;
-        if (fabsf(d) > tcsg_k_epsilon)
-            return 1;
-
-    } while (--i_n);
-
-    return 0;
-}
 tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
 {
     tcsg_polygon_vector o = { 0 };
@@ -765,12 +766,37 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
             continue;
         }
 
+        /*
+            ---------
+            -   - B -
+            - A -----
+            -   - C -
+            ---------
+
+            should, merge B and C => D
+            then merge A and D => E
+
+            ---------
+            -   -   -
+            - A - D -
+            -   -   -
+            ---------
+
+            ---------
+            -       -
+            -   E   -
+            -       -
+            ---------
+
+            */
+
         // search for poly pairs
         for (tcsg_polygon** poi = tcsg__sb_begin(*li), **poe = tcsg__sb_end(*li)-1; poi != poe; ++poi) {
-
+            tcsg_polygon* A = *poi, *B;
             tcsg__edge* edges = 0;
 
             // budil edge list
+            tcsg__sb_reserve(edges, (*poi)->count + 1);
             for (int oi = 0, oj = 1; oi < (*poi)->count; ++oi, oj = (oj + 1) % (*poi)->count) {
                 tcsg__edge e;
                 e.a = (*poi)->verts[oi];
@@ -781,6 +807,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
 
             // search edge list for shared edge
             for (tcsg_polygon** pii = poi + 1, **pie = tcsg__sb_end(*li); pii != pie; ++pii) {
+                B = *pii;
                 for (int ii = 0, ij = 1; ii < (*pii)->count; ++ii, ij = (ij + 1) % (*pii)->count) {
                     tcsg__edge e;
                     e.a = (*pii)->verts[ii];
@@ -1068,7 +1095,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             case 'w':
                 g_wire_frame = !g_wire_frame;
                 break;
-            case '1': case '2': case '3': case '4':
+            case '1': case '2': case '3': case '4': case '5':
                 g_model = wParam - '1';
                 break;
         }
@@ -1195,17 +1222,20 @@ int main(int i_argc, char** i_argv)
     tcsg_polygon_vector aUb = tcsg_union(&a, &b);
     tcsg_polygon_vector aIb = tcsg_intersect(&a, &b);
     tcsg_polygon_vector aSb = tcsg_subtract(&a, &b);
+    tcsg_polygon_vector aSbM = tcsg_merge(&aSb);
 
     tcsg_model am = tcsg_new_model(&a);
     tcsg_model aUbm = tcsg_new_model(&aUb);
     tcsg_model aIbm = tcsg_new_model(&aIb);
     tcsg_model aSbm = tcsg_new_model(&aSb);
+    tcsg_model aSbMm = tcsg_new_model(&aSbM);
 
     tcsg_model* models[] = {
         &am,
         &aUbm,
         &aIbm,
         &aSbm,
+        &aSbMm,
     };
 
     tcsg_polygon_vector_free(&a);
@@ -1256,8 +1286,7 @@ int main(int i_argc, char** i_argv)
 
         if (g_wire_frame) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        }
-        else {
+        } else {
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 
