@@ -330,8 +330,8 @@ tcsg_polygon* tcsg_polygon_new(tcsg_user_data i_ud, int i_count, const tcsg_vert
 {
     tcsg_polygon* o = (tcsg_polygon*)tcsg_malloc(sizeof(tcsg_polygon) + sizeof(tcsg_vert) * (i_count - 1));
     o->ref_count = 0;
+    o->count = i_count;
     if (i_pnts) {
-        o->count = i_count;
         o->plane = tcsg_plane_new(i_pnts, i_pnts + 1, i_pnts + 2);
         o->user = i_ud;
         memcpy(o->verts, i_pnts, sizeof(tcsg_vert) * i_count);
@@ -470,6 +470,17 @@ void tcsg_polygon_vector_pushback(tcsg_polygon_vector* i_self, tcsg_polygon* i_v
     tcsg_polygon_incref(i_value);
     i_self->max_vert_count = tcsg__max(i_self->max_vert_count, i_value->count);
     tcsg__sb_pushback(i_self->polys, i_value);
+}
+
+void tcsg_polygon_vector_remove(tcsg_polygon_vector* i_self, tcsg_polygon* i_value)
+{
+    for (tcsg_polygon** pi = tcsg__sb_begin(i_self->polys), **pe = tcsg__sb_end(i_self->polys); pi != pe; ++pi) {
+        if (*pi == i_value) {
+            tcsg_polygon_decref(i_value);
+            *pi = *(pe - 1);
+            stb__sbn(i_self->polys) -= 1;
+        }
+    }
 }
 
 // Adds rhs to the left
@@ -731,123 +742,202 @@ typedef struct {
     tcsg_vert a, b;
 } tcsg__edge;
 
+typedef struct {
+    tcsg_plane p;
+    tcsg_polygon** list;
+} tcsg__plane_key;
+
+typedef struct {
+    tcsg__edge e;
+    int        ei;
+    tcsg_polygon* poly;
+} tcsg__edge_key;
+
 tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
 {
     tcsg_polygon_vector o = { 0 };
 
-    tcsg_polygon*** list_of_lists = 0;
+    /*
+    ---------
+    -   - B -
+    - A -----
+    -   - C -
+    ---------
 
-    // sort into work groups
-    // for all polys
+    should, merge B and C => D
+    then merge A and D => E
+
+    ---------
+    -   -   -
+    - A - D -
+    -   -   -
+    ---------
+
+    ---------
+    -       -
+    -   E   -
+    -       -
+    ---------
+
+    */
+
+    tcsg__plane_key * groups = 0;
+    
+    // group by plane.. if they dont share a plane, the cant be merged. material can be added her as well.
     for (tcsg_polygon** pi = tcsg__sb_begin(i_list->polys), **pe = tcsg__sb_end(i_list->polys); pi != pe; ++pi) {
-        // for all lists
-        for (tcsg_polygon*** li = tcsg__sb_begin(list_of_lists), *** le = tcsg__sb_end(list_of_lists); li != le; ++li) {
-            // if this poly is co_planer to this first. then it belongs in this list.
-            if (0 == tcsg__plane_sort_cmp(&(*pi)->plane, &((*li)[0]->plane))) {
-                tcsg__sb_pushback((*li), *pi);
+        tcsg__plane_key e;
+        e.p = (*pi)->plane;
+        e.list = 0;
+
+        for (tcsg__plane_key* ei = tcsg__sb_begin(groups), *ee = tcsg__sb_end(groups); ei != ee; ++ei) {
+            if (0 == tcsg__plane_sort_cmp(&ei->p, &e)) {
+                tcsg__sb_pushback(ei->list, *pi);
                 goto next_poly;
             }
         }
-
-        // new list requried;
-        {
-            tcsg_polygon** nl = 0;
-            tcsg__sb_pushback(nl, *pi);
-            tcsg__sb_pushback(list_of_lists, nl);
-        }
+        tcsg__sb_pushback(e.list, *pi);
+        tcsg__sb_pushback(groups, e);
 
         next_poly:{}
     }
 
-    // mereg each group
-    for (tcsg_polygon*** li = tcsg__sb_begin(list_of_lists), *** le = tcsg__sb_end(list_of_lists); li != le; ++li) {
-        int c = tcsg__sb_count(*li);
-        if (tcsg__sb_count(*li) < 2) {
-            continue;
-        }
+    printf("groups %d\n", tcsg__sb_count(groups));
 
-        /*
-            ---------
-            -   - B -
-            - A -----
-            -   - C -
-            ---------
-
-            should, merge B and C => D
-            then merge A and D => E
-
-            ---------
-            -   -   -
-            - A - D -
-            -   -   -
-            ---------
-
-            ---------
-            -       -
-            -   E   -
-            -       -
-            ---------
-
-            */
-
-        // search for poly pairs
-        for (tcsg_polygon** poi = tcsg__sb_begin(*li), **poe = tcsg__sb_end(*li)-1; poi != poe; ++poi) {
-            tcsg_polygon* A = *poi, *B;
-            tcsg__edge* edges = 0;
-
-            // budil edge list
-            tcsg__sb_reserve(edges, (*poi)->count + 1);
-            for (int oi = 0, oj = 1; oi < (*poi)->count; ++oi, oj = (oj + 1) % (*poi)->count) {
-                tcsg__edge e;
-                e.a = (*poi)->verts[oi];
-                e.b = (*poi)->verts[oj];
-            
-                tcsg__sb_pushback(edges, e);
-            }
-
-            // search edge list for shared edge
-            for (tcsg_polygon** pii = poi + 1, **pie = tcsg__sb_end(*li); pii != pie; ++pii) {
-                B = *pii;
-                for (int ii = 0, ij = 1; ii < (*pii)->count; ++ii, ij = (ij + 1) % (*pii)->count) {
-                    tcsg__edge e;
-                    e.a = (*pii)->verts[ii];
-                    e.b = (*pii)->verts[ij];
-
-                    for (tcsg__edge* ei = tcsg__sb_begin(edges); ei != tcsg__sb_end(edges); ++ei) {
-                        //if (0 == memcmp(ei, &e, sizeof(e))) {
-                        if (0 == cmpfloats(ei, &e, 12)) {
-                            printf("Merge");
-                        }
-                    }
+    for (tcsg__plane_key* ei = tcsg__sb_begin(groups), *ee = tcsg__sb_end(groups); ei != ee; ++ei) {
+        if (tcsg__sb_count(ei->list) == 1) {
+            // only 1 poly, on this plane.. push it to the result.
+            tcsg_polygon_vector_pushback(&o, ei->list[0]);
+        } else {
+            tcsg__edge_key* edges = 0;
+            // make all edges clockwise.
+            for (tcsg_polygon** pi = tcsg__sb_begin(ei->list), **pe = tcsg__sb_end(ei->list); pi != pe; ++pi) {
+                tcsg_polygon* p = *pi;
+                for (int i = 0; i < p->count; ++i) {
+                    tcsg__edge_key e;
+                    e.e.a = p->verts[i];
+                    e.e.b = p->verts[(i + 1) % p->count];
+                    e.ei = i;
+                    e.poly = p;
+                    tcsg__sb_pushback(edges, e);
                 }
             }
 
-            tcsg__sb_free(edges);
+            // search anti clockwise
+            tcsg_polygon** merged = 0;
+            for (tcsg_polygon** pi = tcsg__sb_begin(ei->list), **pe = tcsg__sb_end(ei->list); pi != pe; ++pi) {
+                tcsg_polygon* p = *pi;
 
-            //for (tcsg_polygon** pii = poi+1, **pie = tcsg__sb_end(*li); pii != pie; ++pii) {
-            //    // search for pair of consecutive verts in poly pairs.
-            //    const tcsg_vert *vo = (*poi)->verts;
-            //    const tcsg_vert *vi = (*pii)->verts;
+                for (tcsg_polygon** mi = tcsg__sb_begin(merged), **me = tcsg__sb_end(merged); mi != me; ++mi) {
+                    if (p == *mi) {
+                        p = 0;
+                        break;
+                    }
+                }
 
-            //    for (int oi = 0, oj = 1; oi < (*poi)->count; ++oi, oj = (oj + 1) % (*poi)->count) {
-            //        for (int ii = 0, ij = 1; ii < (*pii)->count; ++ii, ij = (ij + 1) % (*pii)->count) {
-            //            if ((0 == memcmp(vo + oi, vi + ii, sizeof(tcsg_vert)))
-            //            && (0 == memcmp(vo + oj, vi + ij, sizeof(tcsg_vert)))) {
-            //                // test to see if the join lins match
-            //                printf("Merge\n");
-            //            }
-            //        }
-            //    }
-            //}
+                if (!p)
+                    continue;
+
+                test_p:
+                for (int i = 0; i < p->count; ++i) {
+                    tcsg__edge_key* edge = 0;
+                    tcsg__edge_key e;
+                    e.e.a = p->verts[(i + 1) % p->count];
+                    e.e.b = p->verts[i];
+
+
+                    // find an edge
+                    for (tcsg__edge_key* ei = tcsg__sb_begin(edges), **ee = tcsg__sb_end(edges); ei != ee; ++ei) {
+                        if (ei->poly && 0 == memcmp(&ei->e, &e.e, sizeof(e.e))) {
+                            edge = ei;
+                            break;
+                        }
+                    }
+
+                    if (!edge)
+                        continue;
+
+                    {
+                        // this is an edge that can be collapsed.. maybe.
+                        tcsg_polygon* A = edge->poly;
+                        tcsg_polygon* B = p;
+
+                        // calc the vectors eading to and from this edge.
+                        // if they continue each other, then we can merge.
+                        const tcsg_f3 a1 = tcsg_vert_position(A->verts + ((edge->ei + A->count - 1) % A->count)); // + count so I dont have to deal with negitive numbers
+                        const tcsg_f3 a2 = tcsg_vert_position(A->verts + edge->ei);
+                        const tcsg_f3 a3 = tcsg_vert_position(A->verts + ((edge->ei + 1) % A->count));
+                        const tcsg_f3 a4 = tcsg_vert_position(A->verts + ((edge->ei + 2) % A->count));
+                        const tcsg_f3 a1_2 = tcsg_f3_sub(&a2, &a1);
+                        const tcsg_f3 a3_4 = tcsg_f3_sub(&a4, &a3);
+
+                        const tcsg_f3 b4 = tcsg_vert_position(B->verts + ((i + B->count - 1) % B->count)); // + count so I dont have to deal with negitive numbers
+                        const tcsg_f3 b3 = tcsg_vert_position(B->verts + i); // a2
+                        const tcsg_f3 b2 = tcsg_vert_position(B->verts + ((i + 1) % B->count)); // a3
+                        const tcsg_f3 b1 = tcsg_vert_position(B->verts + ((i + 2) % B->count));
+                        const tcsg_f3 b1_2 = tcsg_f3_sub(&b2, &b1);
+                        const tcsg_f3 b3_4 = tcsg_f3_sub(&b4, &b3);
+
+                        const float d1 = 1.f + tcsg_f3_dot(&a1_2, &b1_2);
+                        const float d2 = 1.f + tcsg_f3_dot(&a3_4, &b3_4);
+
+                        if ((d1 > -tcsg_k_epsilon) && (d1 < tcsg_k_epsilon)
+                        && (d2 > -tcsg_k_epsilon) && (d2 < tcsg_k_epsilon)) {
+                            // merge A and B
+                            tcsg_polygon* C = tcsg_polygon_new(A->user, A->count + B->count - 4, NULL);
+                            int vi = 0;
+
+                            int as = ((edge->ei + 2) % A->count);
+                            int bs = ((i + 2) % B->count);
+
+                            C->plane = A->plane;
+                            C->user = A->user;
+
+                            /*
+                            -----
+                            - A -
+                            0 ----- ei
+                            - B -
+                            -----
+                            */
+
+                            for (int j = 0; j < A->count - 2; ++j) {
+                                C->verts[vi++] = A->verts[(as + j) % A->count];
+                            }
+                            for (int j = 0; j < B->count - 2; ++j) {
+                                C->verts[vi++] = B->verts[(bs + j) % B->count];
+                            }
+
+                            for (tcsg__edge_key* ei = tcsg__sb_begin(edges), **ee = tcsg__sb_end(edges); ei != ee; ++ei)
+                            {
+                                if (ei->poly == A) ei->poly = NULL;
+                                if (ei->poly == B) ei->poly = NULL;
+                            }
+
+                            tcsg__sb_pushback(merged, A);
+                            tcsg__sb_pushback(merged, B);
+
+                            tcsg_polygon_vector_remove(&o, A);
+                            tcsg_polygon_vector_remove(&o, B);
+
+                            p = C;
+                            // TODO: should add the edges of C
+                            goto test_p;
+                        }
+                    }
+
+                }
+                tcsg_polygon_vector_pushback(&o, p);
+            }
+
+            tcsg__sb_free(merged); merged = 0;
         }
     }
 
-    // for all lists
-    for (tcsg_polygon*** li = tcsg__sb_begin(list_of_lists), *** le = tcsg__sb_end(list_of_lists); li != le; ++li) {
-        for (tcsg_polygon** pi = tcsg__sb_begin(*li), **pe = tcsg__sb_end(*li); pi != pe; ++pi) {
-            tcsg_polygon_decref(*pi);
-        }
+    // free memory
+    for (tcsg__plane_key* ei = tcsg__sb_begin(groups), *ee = tcsg__sb_end(groups); ei != ee; ++ei) {
+        tcsg__sb_free(ei->list);
     }
+    tcsg__sb_free(groups);
 
     return o;
 }
