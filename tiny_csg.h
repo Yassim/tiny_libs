@@ -1,6 +1,7 @@
 #define TINY_CSG_IMPLEMENTATION
 #define TINY_CSG_GLDEMO
 
+
 #ifndef TINY_CSG_HEADER
 #define TINY_CSG_HEADER
 /*
@@ -87,7 +88,7 @@ typedef struct {
     tcsg_user_data  user;
     tcsg_plane      plane;
     tcsg_vert       verts[1];
-} tcsg_polygon;
+} tcsg_polygon, *tcsg_polygon_ptr;
 
 tcsg_polygon* tcsg_polygon_new(tcsg_user_data i_ud, int i_count, const tcsg_vert* i_pnts);
 tcsg_polygon* tcsg_polygon_new3(tcsg_user_data i_ud, const tcsg_vert* i_a, const tcsg_vert* i_b, const tcsg_vert* i_c);
@@ -140,6 +141,7 @@ typedef struct {
 } tcsg_model;
 
 tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list);
+void tcsg_model_free(tcsg_model* i_self);
 
 #ifdef TINY_CSG_IMPLEMENTATION
 #include <stdlib.h>
@@ -180,6 +182,7 @@ static void tcsg__sbgrowf(void **arr, int increment, int itemsize);
 
 #define tcsg__sb_begin(a)           ((a))
 #define tcsg__sb_end(a)             ((a) + tcsg__sb_count(a))
+#define tcsg__sb_foreach(t, i, a)   for (t *i = tcsg__sb_begin(a), *i##e = tcsg__sb_end(a); i != i##e; ++i)
 
 #define stb__sbm(a)                 (tcsg__sb_head(a)->capacity)
 #define stb__sbn(a)                 (tcsg__sb_head(a)->count)
@@ -790,7 +793,8 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
         e.list = 0;
 
         for (tcsg__plane_key* ei = tcsg__sb_begin(groups), *ee = tcsg__sb_end(groups); ei != ee; ++ei) {
-            if (0 == tcsg__plane_sort_cmp(&ei->p, &e)) {
+            if (0 == tcsg__plane_sort_cmp(&ei->p, &e)
+            && (ei->list[0]->user.p == (*pi)->user.p)) {
                 tcsg__sb_pushback(ei->list, *pi);
                 goto next_poly;
             }
@@ -1023,7 +1027,7 @@ tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list)
     tcsg_model o = { 0 };
     tcsg_draw d = { 0 };
 
-//    qsort(&i_list->polys, tcsg__sb_count(i_list->polys), sizeof(tcsg_vert), tcsg__poly_sort_user_cmp);
+    qsort((void*)i_list->polys, tcsg__sb_count(i_list->polys), sizeof(tcsg_polygon*), tcsg__poly_sort_user_cmp);
     d.m = i_list->polys[0]->user;
     for (tcsg_polygon ** i = tcsg__sb_begin(i_list->polys), ** e = tcsg__sb_end(i_list->polys); i != e; ++i) {
 
@@ -1055,6 +1059,13 @@ tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list)
     tcsg__sb_pushback(o.draws, d);
 
     return o;
+}
+
+void tcsg_model_free(tcsg_model* i_self)
+{
+    tcsg__sb_free(i_self->verts);
+    tcsg__sb_free(i_self->indcies);
+    tcsg__sb_free(i_self->draws);
 }
 
 #endif//TINY_CSG_IMPLEMENTATION
@@ -1302,12 +1313,20 @@ void tscg_platform_shutdown()
 
 #endif
 
+tcsg_polygon_vector colourize(tcsg_polygon_vector i_n, int i_offset)
+{
+    tcsg__sb_foreach(tcsg_polygon_ptr, i, i_n.polys) {
+        (*i)->user.i = i_offset++;
+    }
+    return i_n;
+}
+
 int main(int i_argc, char** i_argv)
 {
     const tcsg_f3 one = { 1.f, 1.f, 1.f };
     tcsg_user_data m = { 0 };
-    tcsg_polygon_vector a = tcsg_cube(m, NULL, NULL);
-    tcsg_polygon_vector b = tcsg_cube(m, &one, NULL);
+    tcsg_polygon_vector a = colourize(tcsg_cube(m, NULL, NULL), 0);
+    tcsg_polygon_vector b = colourize(tcsg_cube(m, &one, NULL), 6);
 
     tcsg_polygon_vector aUb = tcsg_union(&a, &b);
     tcsg_polygon_vector aIb = tcsg_intersect(&a, &b);
@@ -1364,8 +1383,9 @@ int main(int i_argc, char** i_argv)
         glEnable(GL_LIGHTING);
         glEnable(GL_LIGHT0);
         glEnable(GL_NORMALIZE);
+        glEnable(GL_COLOR_MATERIAL);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClearColor(0.3f, 0.3f, 0.3f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         glMatrixMode(GL_PROJECTION);
@@ -1383,13 +1403,45 @@ int main(int i_argc, char** i_argv)
         // draw cube
         glEnableClientState(GL_VERTEX_ARRAY);
         glEnableClientState(GL_NORMAL_ARRAY);
-        glVertexPointer(3, GL_FLOAT, sizeof(tcsg_vert), &models[g_model]->verts->position);
-        glNormalPointer(GL_FLOAT, sizeof(tcsg_vert), &models[g_model]->verts->normal);
-        glDrawElements(GL_TRIANGLES, models[g_model]->draws[0].count, GL_UNSIGNED_SHORT, models[g_model]->indcies);
+        {
+            static const unsigned int colours[] = {
+                0xFFFFFF, //White	
+                0xC0C0C0, //Silver	
+                0x808080, //Gray	
+                0x000000, //Black	
+                0xFF0000, //Red		
+                0x800000, //Maroon	
+                0xFFFF00, //Yellow	
+                0x808000, //Olive	
+                0x00FF00, //Lime	
+                0x008000, //Green	
+                0x00FFFF, //Aqua	
+                0x008080, //Teal	
+                0x0000FF, //Blue	
+                0x000080, //Navy	
+                0xFF00FF, //Fuchsia	
+                0x800080, //Purple	
+            };
+
+            tcsg_model* m = models[g_model];
+            glVertexPointer(3, GL_FLOAT, sizeof(tcsg_vert), &m->verts->position);
+            glNormalPointer(GL_FLOAT, sizeof(tcsg_vert), &m->verts->normal);
+            tcsg__sb_foreach(tcsg_draw, d, m->draws) {
+                unsigned int c = colours[d->m.i];
+                const GLubyte cv[] = { (GLubyte)((c >> 16) & 0xff), (GLubyte)((c >> 8) & 0xff), (GLubyte)(c & 0xff) };
+                glColor3ubv(cv);
+                glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+                glDrawElements(GL_TRIANGLES, d->count, GL_UNSIGNED_SHORT, m->indcies + d->offset);
+            }
+        }
         glDisableClientState(GL_NORMAL_ARRAY);
         glDisableClientState(GL_VERTEX_ARRAY);
     }
     tscg_platform_shutdown();
+
+    for (int m = 0; m < sizeof(models) / sizeof(models[0]); ++m) {
+        tcsg_model_free(models[m]);
+    }
 
     return 0;
 }
