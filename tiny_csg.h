@@ -134,9 +134,9 @@ typedef struct {
 } tcsg_draw;
 
 typedef struct {
-    tcsg_vert *         verts;
-    unsigned short *    indcies;
-    tcsg_draw *         draws;
+    tcsg_vert*      verts;
+    unsigned short* indcies;
+    tcsg_draw*      draws;
 } tcsg_model;
 
 tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list);
@@ -167,7 +167,7 @@ typedef struct {
     int capacity;
 } tscg__vector_head;
 
-static void * stb__sbgrowf(void *arr, int increment, int itemsize);
+static void tcsg__sbgrowf(void **arr, int increment, int itemsize);
 
 #define tcsg__sb_head(P)            (((tscg__vector_head*)(P))-1)
 
@@ -186,10 +186,11 @@ static void * stb__sbgrowf(void *arr, int increment, int itemsize);
 
 #define stb__sbneedgrow(a,n)        ((a)==0 || stb__sbn(a)+(n) >= stb__sbm(a))
 #define stb__sbmaybegrow(a,n)       (stb__sbneedgrow(a,(n)) ? stb__sbgrow(a,n) : 0)
-#define stb__sbgrow(a,n)            ((a) = stb__sbgrowf((a), (n), sizeof(*(a))))
+#define stb__sbgrow(a,n)            (tcsg__sbgrowf((void**)&(a), (n), sizeof(*(a))))
 
-static void * stb__sbgrowf(void *arr, int increment, int itemsize)
+static void tcsg__sbgrowf(void **i_arr, int increment, int itemsize)
 {
+    void* arr = *i_arr;
     int dbl_cur = arr ? 2 * stb__sbm(arr) : 0;
     int min_needed = tcsg__sb_count(arr) + increment;
     int m = dbl_cur > min_needed ? dbl_cur : min_needed;
@@ -198,13 +199,15 @@ static void * stb__sbgrowf(void *arr, int increment, int itemsize)
         if (!arr)
             p->count = 0;
         p->capacity = m;
-        return p + 1;
+        *i_arr = (p + 1);
+        //return p + 1;
     }
     else {
 #ifdef STRETCHY_BUFFER_OUT_OF_MEMORY
         STRETCHY_BUFFER_OUT_OF_MEMORY;
 #endif
-        return (void *)(sizeof(tscg__vector_head)); // try to force a NULL pointer exception later
+        *i_arr = 0;
+        //return (void *)(sizeof(tscg__vector_head)); // try to force a NULL pointer exception later
     }
 }
 
@@ -723,12 +726,9 @@ int cmpfloats(const float* i_a, const float * i_b, size_t i_n)
 
 int tcsg__plane_sort_cmp(const void* i_a, const void* i_b)
 {
-    const tcsg_plane* a = (const tcsg_plane*)i_a;
-    const tcsg_plane* b = (const tcsg_plane*)i_b;
+    const float* a = (const float*)i_a;
+    const float* b = (const float*)i_b;
     return cmpfloats(a, b, 4);
-    /*const tcsg_f3 pb = tcsg_f3_scale(&b.normal, b.d);
-    const float t = (tcsg_f3_dot(&a.normal, &pb) - a.d);
-    return (t < -tcsg_k_epsilon) ? -1 : ((t > tcsg_k_epsilon) ? 1 : 0);*/
 }
 
 int tcsg__poly_sort_cmp(const void* i_a, const void* i_b)
@@ -801,7 +801,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
         next_poly:{}
     }
 
-    printf("groups %d\n", tcsg__sb_count(groups));
+//    printf("groups %d\n", tcsg__sb_count(groups));
 
     for (tcsg__plane_key* ei = tcsg__sb_begin(groups), *ee = tcsg__sb_end(groups); ei != ee; ++ei) {
         if (tcsg__sb_count(ei->list) == 1) {
@@ -846,7 +846,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
 
 
                     // find an edge
-                    for (tcsg__edge_key* ei = tcsg__sb_begin(edges), **ee = tcsg__sb_end(edges); ei != ee; ++ei) {
+                    for (tcsg__edge_key* ei = tcsg__sb_begin(edges), *ee = tcsg__sb_end(edges); ei != ee; ++ei) {
                         if (ei->poly && 0 == memcmp(&ei->e, &e.e, sizeof(e.e))) {
                             edge = ei;
                             break;
@@ -907,7 +907,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
                                 C->verts[vi++] = B->verts[(bs + j) % B->count];
                             }
 
-                            for (tcsg__edge_key* ei = tcsg__sb_begin(edges), **ee = tcsg__sb_end(edges); ei != ee; ++ei)
+                            for (tcsg__edge_key* ei = tcsg__sb_begin(edges), *ee = tcsg__sb_end(edges); ei != ee; ++ei)
                             {
                                 if (ei->poly == A) ei->poly = NULL;
                                 if (ei->poly == B) ei->poly = NULL;
