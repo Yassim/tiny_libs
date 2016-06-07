@@ -42,18 +42,20 @@ typedef union {
 
 // Vector 3
 // TODO: make overrideable
+#if !defined(TCSG_HAVE_F3)
 typedef struct {
     float   x, y, z;
 } tcsg_f3;
 
-tcsg_f3 tcsg_f3_lerp(const tcsg_f3* i_0, const tcsg_f3* i_1, float i_0to1);
-tcsg_f3 tcsg_f3_cross(const tcsg_f3* i_a, const tcsg_f3* i_b);
-float   tcsg_f3_dot(const tcsg_f3* i_a, const tcsg_f3* i_b);
-tcsg_f3 tcsg_f3_normalise(const tcsg_f3* i_a);
-tcsg_f3 tcsg_f3_invert(const tcsg_f3* i_a);
-tcsg_f3 tcsg_f3_sub(const tcsg_f3* i_a, const tcsg_f3* i_b);
-tcsg_f3 tcsg_f3_scale(const tcsg_f3* i_a, float i_f);
+tcsg_f3 tcsg_f3_lerp(const tcsg_f3 i_0, const tcsg_f3 i_1, float i_0to1);
+tcsg_f3 tcsg_f3_cross(const tcsg_f3 i_a, const tcsg_f3 i_b);
+float   tcsg_f3_dot(const tcsg_f3 i_a, const tcsg_f3 i_b);
+tcsg_f3 tcsg_f3_normalise(const tcsg_f3 i_a);
+tcsg_f3 tcsg_f3_invert(const tcsg_f3 i_a);
+tcsg_f3 tcsg_f3_sub(const tcsg_f3 i_a, const tcsg_f3 i_b);
+tcsg_f3 tcsg_f3_scale(const tcsg_f3 i_a, float i_f);
 tcsg_f3 tcsg_f3_new(float i_x, float i_y, float i_z);
+#endif // TCSG_HAVE_F3
 
 // Vertex
 // TODO: make overrideable
@@ -147,13 +149,16 @@ void tcsg_model_free(tcsg_model* i_self);
 #include <stdlib.h>
 #include <math.h>
 #include <memory.h>
-#include <malloc.h>
 
 // Defines
 
+//#define tcsg_malloc(N)      malloc((N))
+#if !defined(TCSG_HAVE_MEMORY)
+#include <malloc.h>
 #define tcsg_malloc(N)      malloc((N))
 #define tcsg_realloc(P, N)  realloc((P), (N))
 #define tcsg_free(P)        free((P))
+#endif
 #define tcsg__max(A, B)     (((A) > (B)) ? (A) : (B))
 
 
@@ -216,64 +221,64 @@ static void tcsg__sbgrowf(void **i_arr, int increment, int itemsize)
 
 
 
-
-tcsg_f3 tcsg_f3_lerp(const tcsg_f3* i_0, const tcsg_f3* i_1, float i_0to1)
+#if !defined(TCSG_HAVE_F3)
+tcsg_f3 tcsg_f3_lerp(const tcsg_f3 i_0, const tcsg_f3 i_1, float i_0to1)
 {
     tcsg_f3 o;
-    o.x = i_0->x + (i_1->x - i_0->x) * i_0to1;
-    o.y = i_0->y + (i_1->y - i_0->y) * i_0to1;
-    o.z = i_0->z + (i_1->z - i_0->z) * i_0to1;
+    o.x = i_0.x + (i_1.x - i_0.x) * i_0to1;
+    o.y = i_0.y + (i_1.y - i_0.y) * i_0to1;
+    o.z = i_0.z + (i_1.z - i_0.z) * i_0to1;
     return o;
 }
 
-tcsg_f3 tcsg_f3_cross(const tcsg_f3* i_a, const tcsg_f3* i_b)
+tcsg_f3 tcsg_f3_cross(const tcsg_f3 i_a, const tcsg_f3 i_b)
 {
     tcsg_f3 o;
-    o.x = i_a->y * i_b->z - i_a->z * i_b->y;
-    o.y = i_a->z * i_b->x - i_a->x * i_b->z;
-    o.z = i_a->x * i_b->y - i_a->y * i_b->x;
+    o.x = i_a.y * i_b.z - i_a.z * i_b.y;
+    o.y = i_a.z * i_b.x - i_a.x * i_b.z;
+    o.z = i_a.x * i_b.y - i_a.y * i_b.x;
     return o;
 }
 
-float   tcsg_f3_dot(const tcsg_f3* i_a, const tcsg_f3* i_b)
+float   tcsg_f3_dot(const tcsg_f3 i_a, const tcsg_f3 i_b)
 {
-    return i_a->x * i_b->x + i_a->y * i_b->y + i_a->z * i_b->z;
+    return i_a.x * i_b.x + i_a.y * i_b.y + i_a.z * i_b.z;
 }
 
-tcsg_f3 tcsg_f3_normalise(const tcsg_f3* i_a)
+tcsg_f3 tcsg_f3_normalise(const tcsg_f3 i_a)
 {
     const float il = 1.0f / sqrtf(tcsg_f3_dot(i_a, i_a));
     tcsg_f3 o;
-    o.x = i_a->x * il;
-    o.y = i_a->y * il;
-    o.z = i_a->z * il;
+    o.x = i_a.x * il;
+    o.y = i_a.y * il;
+    o.z = i_a.z * il;
     return o;
 }
 
-tcsg_f3 tcsg_f3_invert(const tcsg_f3* i_a)
+tcsg_f3 tcsg_f3_invert(const tcsg_f3 i_a)
 {
     tcsg_f3 o;
-    o.x = -i_a->x;
-    o.y = -i_a->y;
-    o.z = -i_a->z;
+    o.x = -i_a.x;
+    o.y = -i_a.y;
+    o.z = -i_a.z;
     return o;
 }
 
-tcsg_f3 tcsg_f3_sub(const tcsg_f3* i_a, const tcsg_f3* i_b)
+tcsg_f3 tcsg_f3_sub(const tcsg_f3 i_a, const tcsg_f3 i_b)
 {
     tcsg_f3 o;
-    o.x = i_a->x - i_b->x;
-    o.y = i_a->y - i_b->y;
-    o.z = i_a->z - i_b->z;
+    o.x = i_a.x - i_b.x;
+    o.y = i_a.y - i_b.y;
+    o.z = i_a.z - i_b.z;
     return o;
 }
 
-tcsg_f3 tcsg_f3_scale(const tcsg_f3* i_a, float i_f)
+tcsg_f3 tcsg_f3_scale(const tcsg_f3 i_a, float i_f)
 {
     tcsg_f3 o;
-    o.x = i_a->x * i_f;
-    o.y = i_a->y * i_f;
-    o.z = i_a->z * i_f;
+    o.x = i_a.x * i_f;
+    o.y = i_a.y * i_f;
+    o.z = i_a.z * i_f;
     return o;
 }
 
@@ -284,16 +289,28 @@ tcsg_f3 tcsg_f3_new(float i_x, float i_y, float i_z)
     o.y = i_y;
     o.z = i_z;
     return o;
-
 }
 
+float   tcsg_f3_x(const tcsg_f3 i_a)
+{
+    return i_a.x;
+}
+float   tcsg_f3_y(const tcsg_f3 i_a)
+{
+    return i_a.y;
+}
+float   tcsg_f3_z(const tcsg_f3 i_a)
+{
+    return i_a.z;
+}
+#endif//TCSG_HAVE_F3
 
 
 tcsg_vert   tcsg_vert_lerp(const tcsg_vert* i_0, const tcsg_vert* i_1, float i_0to1)
 {
     tcsg_vert o;
-    o.position = tcsg_f3_lerp(&i_0->position, &i_1->position, i_0to1);
-    o.normal = tcsg_f3_lerp(&i_0->normal, &i_1->normal, i_0to1);
+    o.position = tcsg_f3_lerp(i_0->position, i_1->position, i_0to1);
+    o.normal = tcsg_f3_lerp(i_0->normal, i_1->normal, i_0to1);
     return o;
 }
 
@@ -314,18 +331,18 @@ tcsg_plane tcsg_plane_new(const tcsg_vert* i_a, const tcsg_vert* i_b, const tcsg
     const tcsg_f3 pa = tcsg_vert_position(i_a);
     const tcsg_f3 pb = tcsg_vert_position(i_b);
     const tcsg_f3 pc = tcsg_vert_position(i_c);
-    const tcsg_f3 pb_a = tcsg_f3_sub(&pb, &pa);
-    const tcsg_f3 pc_a = tcsg_f3_sub(&pc, &pa);
-    const tcsg_f3 pC_baca = tcsg_f3_cross(&pb_a, &pc_a);
-    const tcsg_f3 n = tcsg_f3_normalise(&pC_baca);
+    const tcsg_f3 pb_a = tcsg_f3_sub(pb, pa);
+    const tcsg_f3 pc_a = tcsg_f3_sub(pc, pa);
+    const tcsg_f3 pC_baca = tcsg_f3_cross(pb_a, pc_a);
+    const tcsg_f3 n = tcsg_f3_normalise(pC_baca);
     o.normal = n;
-    o.d = tcsg_f3_dot(&pa, &n);
+    o.d = tcsg_f3_dot(pa, n);
     return o;
 }
 
 void tcsg_plane_invert(tcsg_plane* io_self)
 {
-    io_self->normal = tcsg_f3_invert(&io_self->normal);
+    io_self->normal = tcsg_f3_invert(io_self->normal);
     io_self->d = -io_self->d;
 }
 
@@ -390,8 +407,8 @@ void tcsg_polygon_invert(tcsg_polygon* i_a)
         *s = *e;
         *e = t;
 
-        s->normal = tcsg_f3_invert(&s->normal);
-        e->normal = tcsg_f3_invert(&e->normal);
+        s->normal = tcsg_f3_invert(s->normal);
+        e->normal = tcsg_f3_invert(e->normal);
     }
     tcsg_plane_invert(&i_a->plane);
 }
@@ -412,7 +429,7 @@ void tcsg__split(const tcsg_plane* i_p, tcsg_polygon** i_begin, tcsg_polygon** i
             tcsg_plane_test* ti = tests;
             for (const tcsg_vert* vi = (*pi)->verts, *ve = vi + (*pi)->count; vi != ve; ++vi, ++ti) {
                 const tcsg_f3 vp = tcsg_vert_position(vi);
-                const float t = tcsg_f3_dot(&i_p->normal, &vp) - i_p->d;
+                const float t = tcsg_f3_dot(i_p->normal, vp) - i_p->d;
                 all_tests |= (*ti = (t < -tcsg_k_epsilon) ? tcsg_k_back : ((t > tcsg_k_epsilon) ? tcsg_k_front : tcsg_k_co_plane));
             }
         }
@@ -420,7 +437,7 @@ void tcsg__split(const tcsg_plane* i_p, tcsg_polygon** i_begin, tcsg_polygon** i
         switch ((tcsg_plane_test)all_tests)
         {
         case tcsg_k_co_plane: {
-            tcsg_polygon_vector* o = ((o_co_front == o_co_back) || (tcsg_f3_dot(&i_p->normal, &(*pi)->plane.normal) > 0.0f)) ? o_co_front : o_co_back;
+            tcsg_polygon_vector* o = ((o_co_front == o_co_back) || (tcsg_f3_dot(i_p->normal, (*pi)->plane.normal) > 0.0f)) ? o_co_front : o_co_back;
             tcsg_polygon_vector_pushback(o, *pi);
         } break;
         case tcsg_k_front: tcsg_polygon_vector_pushback(o_front, *pi); break;
@@ -444,9 +461,9 @@ void tcsg__split(const tcsg_plane* i_p, tcsg_polygon** i_begin, tcsg_polygon** i
                 if ((ti[i] | ti[j]) == tcsg_k_spanning) {
                     const tcsg_f3 vpi = tcsg_vert_position((*pi)->verts + i);
                     const tcsg_f3 vpj = tcsg_vert_position((*pi)->verts + j);
-                    const tcsg_f3 vpj_vpi = tcsg_f3_sub(&vpj, &vpi);
-                    const float dn_vpi = tcsg_f3_dot(&i_p->normal, &vpi);
-                    const float dn_vpj_vpi = tcsg_f3_dot(&i_p->normal, &vpj_vpi);
+                    const tcsg_f3 vpj_vpi = tcsg_f3_sub(vpj, vpi);
+                    const float dn_vpi = tcsg_f3_dot(i_p->normal, vpi);
+                    const float dn_vpj_vpi = tcsg_f3_dot(i_p->normal, vpj_vpi);
                     const float t = (i_p->d - dn_vpi) / dn_vpj_vpi;
                     const tcsg_vert nv = tcsg_vert_lerp((*pi)->verts + i, (*pi)->verts + j, t);
                     *vf++ = nv;
@@ -702,7 +719,7 @@ void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k
 
     for (tcsg_polygon** pi = tcsg__sb_begin(i_list->polys), **pe = tcsg__sb_end(i_list->polys); pi != pe; ++pi) {
         for (int i = 0; i < tcsg_k_div_max; ++i) {
-            const float dp = tcsg_f3_dot(data + i, &(*pi)->plane.normal);
+            const float dp = tcsg_f3_dot(data[i], (*pi)->plane.normal);
             if (k_45deg < dp) {
                 if (o_dirs[i]) {
                     tcsg_polygon_vector_pushback(o_dirs[i], *pi);
@@ -871,18 +888,18 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
                         const tcsg_f3 a2 = tcsg_vert_position(A->verts + edge->ei);
                         const tcsg_f3 a3 = tcsg_vert_position(A->verts + ((edge->ei + 1) % A->count));
                         const tcsg_f3 a4 = tcsg_vert_position(A->verts + ((edge->ei + 2) % A->count));
-                        const tcsg_f3 a1_2 = tcsg_f3_sub(&a2, &a1);
-                        const tcsg_f3 a3_4 = tcsg_f3_sub(&a4, &a3);
+                        const tcsg_f3 a1_2 = tcsg_f3_sub(a2, a1);
+                        const tcsg_f3 a3_4 = tcsg_f3_sub(a4, a3);
 
                         const tcsg_f3 b4 = tcsg_vert_position(B->verts + ((i + B->count - 1) % B->count)); // + count so I dont have to deal with negitive numbers
                         const tcsg_f3 b3 = tcsg_vert_position(B->verts + i); // a2
                         const tcsg_f3 b2 = tcsg_vert_position(B->verts + ((i + 1) % B->count)); // a3
                         const tcsg_f3 b1 = tcsg_vert_position(B->verts + ((i + 2) % B->count));
-                        const tcsg_f3 b1_2 = tcsg_f3_sub(&b2, &b1);
-                        const tcsg_f3 b3_4 = tcsg_f3_sub(&b4, &b3);
+                        const tcsg_f3 b1_2 = tcsg_f3_sub(b2, b1);
+                        const tcsg_f3 b3_4 = tcsg_f3_sub(b4, b3);
 
-                        const float d1 = 1.f + tcsg_f3_dot(&a1_2, &b1_2);
-                        const float d2 = 1.f + tcsg_f3_dot(&a3_4, &b3_4);
+                        const float d1 = 1.f + tcsg_f3_dot(a1_2, b1_2);
+                        const float d2 = 1.f + tcsg_f3_dot(a3_4, b3_4);
 
                         if ((d1 > -tcsg_k_epsilon) && (d1 < tcsg_k_epsilon)
                         && (d2 > -tcsg_k_epsilon) && (d2 < tcsg_k_epsilon)) {
@@ -988,9 +1005,9 @@ tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const 
         for (int i = 0; i < 4; i++)
         {
             tcsg_f3 p = tcsg_f3_new(
-                i_cntr->x + (i_rad->x * (2 * (((v[i] & 1) > 0) ? 1 : 0) - 1)),
-                i_cntr->y + (i_rad->y * (2 * (((v[i] & 2) > 0) ? 1 : 0) - 1)),
-                i_cntr->z + (i_rad->z * (2 * (((v[i] & 4) > 0) ? 1 : 0) - 1))
+                tcsg_f3_x(*i_cntr) + (tcsg_f3_x(*i_rad) * (2 * (((v[i] & 1) > 0) ? 1 : 0) - 1)),
+                tcsg_f3_y(*i_cntr) + (tcsg_f3_y(*i_rad) * (2 * (((v[i] & 2) > 0) ? 1 : 0) - 1)),
+                tcsg_f3_z(*i_cntr) + (tcsg_f3_z(*i_rad) * (2 * (((v[i] & 4) > 0) ? 1 : 0) - 1))
             );
             vx[i].position = p;
             vx[i].normal = n;
@@ -1196,7 +1213,7 @@ static LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPar
             case 'w':
                 g_wire_frame = !g_wire_frame;
                 break;
-            case '1': case '2': case '3': case '4': case '5':
+            case '1': case '2': case '3': case '4': case '5': case '6':
                 g_model = wParam - '1';
                 break;
         }
@@ -1320,6 +1337,64 @@ tcsg_polygon_vector colourize(tcsg_polygon_vector i_n, int i_offset)
     }
     return i_n;
 }
+//
+//tcsg_model building()
+//{
+//    tcsg_model o;
+//
+//    const float wall_thickness = 0.2f;
+//    const tcsg_f3 ground =  { 14.0f, 0.2f, 14.0f };
+//    const tcsg_f3 outside = { 10.0f, 2.0f, 10.0f };
+//    const tcsg_f3 inside = { outside.x - wall_thickness, outside.y - wall_thickness, outside.z - wall_thickness };
+//    const tcsg_f3 window = { inside.x / 10.f, 1.0f, wall_thickness };
+//
+//    tcsg_user_data concreate;
+//    tcsg_user_data glass;
+//    tcsg_user_data lawn;
+//
+//    concreate.i = 0;
+//    glass.i = 12;
+//    lawn.i = 7;
+//
+//    {
+//        tcsg_f3 at = { 0.0f, -10.0f, 0.0f };
+//        tcsg_polygon_vector acc = tcsg_cube(lawn, &at, &ground);
+//        at.y += (ground.y + outside.y) / 2.0f;
+//        for (int floor = 0; floor < 10; ++floor) {
+//            tcsg_polygon_vector os = tcsg_cube(concreate, &at, &outside);
+//            tcsg_polygon_vector is = tcsg_cube(concreate, &at, &inside);
+//            tcsg_polygon_vector l = tcsg_subtract(&os, &is);
+//            tcsg_polygon_vector r = tcsg_union(&acc, &l);
+//            {
+//                float window_end = inside.x + window.x / 2.f;
+//                float window_start = -window_end;
+//                float window_step = window.x + 0.2f;
+//                for (float p = window_start; p < window_end; p += window_step) {
+//                    tcsg_f3 at = { p, -10.0f, 0.0f };
+//                    tcsg_polygon_vector is = tcsg_cube(concreate, &at, &inside);
+//                }
+//            }
+//            
+//
+//            tcsg_polygon_vector_free(&acc);
+//            tcsg_polygon_vector_free(&l);
+//            tcsg_polygon_vector_free(&is);
+//            tcsg_polygon_vector_free(&os);
+//            acc = r;
+//            at.y += outside.y;
+//        }
+//
+//        {
+//            tcsg_polygon_vector res = tcsg_merge(&acc);
+//            tcsg_polygon_vector_free(&acc);
+//
+//            o = tcsg_new_model(&res);
+//            tcsg_polygon_vector_free(&res);
+//        }
+//    }
+//
+//    return o;
+//}
 
 int main(int i_argc, char** i_argv)
 {
@@ -1338,6 +1413,7 @@ int main(int i_argc, char** i_argv)
     tcsg_model aIbm = tcsg_new_model(&aIb);
     tcsg_model aSbm = tcsg_new_model(&aSb);
     tcsg_model aSbMm = tcsg_new_model(&aSbM);
+  //  tcsg_model buildingm = building();
 
     tcsg_model* models[] = {
         &am,
@@ -1345,6 +1421,7 @@ int main(int i_argc, char** i_argv)
         &aIbm,
         &aSbm,
         &aSbMm,
+        //&buildingm,
     };
 
     tcsg_polygon_vector_free(&a);
@@ -1405,29 +1482,29 @@ int main(int i_argc, char** i_argv)
         glEnableClientState(GL_NORMAL_ARRAY);
         {
             static const unsigned int colours[] = {
-                0xFFFFFF, //White	
-                0xC0C0C0, //Silver	
-                0x808080, //Gray	
-                0x000000, //Black	
-                0xFF0000, //Red		
-                0x800000, //Maroon	
-                0xFFFF00, //Yellow	
-                0x808000, //Olive	
-                0x00FF00, //Lime	
-                0x008000, //Green	
-                0x00FFFF, //Aqua	
-                0x008080, //Teal	
-                0x0000FF, //Blue	
-                0x000080, //Navy	
-                0xFF00FF, //Fuchsia	
-                0x800080, //Purple	
+                0xFFFFFF, //  0 White	
+                0xC0C0C0, //  1 Silver	
+                0x808080, //  2 Gray	
+                0x000000, //  3 Black	
+                0xFF0000, //  4 Red		
+                0x800000, //  5 Maroon	
+                0xFFFF00, //  6 Yellow	
+                0x808000, //  7 Olive	
+                0x00FF00, //  8 Lime	
+                0x008000, //  9 Green	
+                0x00FFFF, // 10 Aqua	
+                0x008080, // 11 Teal	
+                0x0000FF, // 12 Blue	
+                0x000080, // 13 Navy	
+                0xFF00FF, // 14 Fuchsia	
+                0x800080, // 15 Purple	
             };
 
             tcsg_model* m = models[g_model];
             glVertexPointer(3, GL_FLOAT, sizeof(tcsg_vert), &m->verts->position);
             glNormalPointer(GL_FLOAT, sizeof(tcsg_vert), &m->verts->normal);
             tcsg__sb_foreach(tcsg_draw, d, m->draws) {
-                unsigned int c = colours[d->m.i];
+                unsigned int c = colours[d->m.i % (sizeof(colours) / sizeof(colours[0]))];
                 const GLubyte cv[] = { (GLubyte)((c >> 16) & 0xff), (GLubyte)((c >> 8) & 0xff), (GLubyte)(c & 0xff) };
                 glColor3ubv(cv);
                 glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
