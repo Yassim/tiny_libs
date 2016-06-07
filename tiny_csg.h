@@ -172,6 +172,7 @@ void tcsg_model_free(tcsg_model* i_self);
 typedef struct {
     int count;
     int capacity;
+    int pad[2];
 } tscg__vector_head;
 
 static void tcsg__sbgrowf(void **arr, int increment, int itemsize);
