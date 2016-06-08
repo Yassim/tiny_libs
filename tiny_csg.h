@@ -67,6 +67,7 @@ typedef struct {
 tcsg_vert   tcsg_vert_lerp(const tcsg_vert* i_0, const tcsg_vert* i_1, float i_0to1);
 tcsg_f3     tcsg_vert_position(const tcsg_vert* i_a);
 tcsg_f3     tcsg_vert_normal(const tcsg_vert* i_a);
+//uint32 hash = (((uint32)pos.x) * 73856093) ^ (((uint32)pos.y) * 19349663) ^ (((uint32)pos.z) * 83492791);
 
 // Plane 
 typedef struct {
@@ -127,7 +128,10 @@ enum {
 void tcsg_divide(tcsg_polygon_vector* i_list, tcsg_polygon_vector* o_dirs[tcsg_k_div_max]);
 
 void tcsg_from_tris(tcsg_vert* i_verts, unsigned short* i_index, int i_tri_count, tcsg_user_data i_ud, tcsg_polygon_vector* o_v);
-tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const tcsg_f3* i_rad);
+tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3 i_cntr, const tcsg_f3 i_rad);
+tcsg_polygon_vector tcsg_cube_(tcsg_user_data i_ud);
+tcsg_polygon_vector tcsg_cube_c(tcsg_user_data i_ud, const tcsg_f3 i_cntr);
+tcsg_polygon_vector tcsg_cube_r(tcsg_user_data i_ud, const tcsg_f3 i_rad);
 
 
 typedef struct {
@@ -974,7 +978,24 @@ void tcsg_from_tris(tcsg_vert* i_verts, unsigned short* i_index, int i_tri_count
     }
 }
 
-tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const tcsg_f3* i_rad)
+tcsg_polygon_vector tcsg_cube_(tcsg_user_data i_ud)
+{
+    const tcsg_f3 zero = { 0 };
+    const tcsg_f3 one = { 1.f, 1.f, 1.f };
+    return tcsg_cube(i_ud, zero, one);
+}
+tcsg_polygon_vector tcsg_cube_c(tcsg_user_data i_ud, const tcsg_f3 i_cntr)
+{
+    const tcsg_f3 one = { 1.f, 1.f, 1.f };
+    return tcsg_cube(i_ud, i_cntr, one);
+}
+tcsg_polygon_vector tcsg_cube_r(tcsg_user_data i_ud, const tcsg_f3 i_rad)
+{
+    const tcsg_f3 zero = { 0 };
+    return tcsg_cube(i_ud, zero, i_rad);
+}
+
+tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3 i_cntr, const tcsg_f3 i_rad)
 {
     tcsg_polygon_vector o = { 0 };
     tcsg__sb_reserve(o.polys, 6);
@@ -991,12 +1012,6 @@ tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const 
         {{4, 5, 7, 6}, { 0,  0,  1}}
     };
 
-    const tcsg_f3 zero = { 0 };
-    const tcsg_f3 one = { 1.f, 1.f, 1.f };
-
-    if (!i_cntr) i_cntr = &zero;
-    if (!i_rad) i_rad = &one;
-
     for (int x = 0; x < 6; x++)
     {
         const int* v = data[x].flags;
@@ -1006,9 +1021,9 @@ tcsg_polygon_vector tcsg_cube(tcsg_user_data i_ud, const tcsg_f3* i_cntr, const 
         for (int i = 0; i < 4; i++)
         {
             tcsg_f3 p = tcsg_f3_new(
-                tcsg_f3_x(*i_cntr) + (tcsg_f3_x(*i_rad) * (2 * (((v[i] & 1) > 0) ? 1 : 0) - 1)),
-                tcsg_f3_y(*i_cntr) + (tcsg_f3_y(*i_rad) * (2 * (((v[i] & 2) > 0) ? 1 : 0) - 1)),
-                tcsg_f3_z(*i_cntr) + (tcsg_f3_z(*i_rad) * (2 * (((v[i] & 4) > 0) ? 1 : 0) - 1))
+                tcsg_f3_x(i_cntr) + (tcsg_f3_x(i_rad) * (2 * (((v[i] & 1) > 0) ? 1 : 0) - 1)),
+                tcsg_f3_y(i_cntr) + (tcsg_f3_y(i_rad) * (2 * (((v[i] & 2) > 0) ? 1 : 0) - 1)),
+                tcsg_f3_z(i_cntr) + (tcsg_f3_z(i_rad) * (2 * (((v[i] & 4) > 0) ? 1 : 0) - 1))
             );
             vx[i].position = p;
             vx[i].normal = n;
@@ -1039,6 +1054,8 @@ int tcsg__poly_sort_user_cmp(const void* i_a, const void* i_b)
     const tcsg_polygon* b = *(const tcsg_polygon**)i_b;
     return (a->user.p < b->user.p) - (b->user.p < a->user.p);
 }
+
+
 
 tcsg_model tcsg_new_model(const tcsg_polygon_vector* i_list)
 {
@@ -1338,71 +1355,102 @@ tcsg_polygon_vector colourize(tcsg_polygon_vector i_n, int i_offset)
     }
     return i_n;
 }
-//
-//tcsg_model building()
-//{
-//    tcsg_model o;
-//
-//    const float wall_thickness = 0.2f;
-//    const tcsg_f3 ground =  { 14.0f, 0.2f, 14.0f };
-//    const tcsg_f3 outside = { 10.0f, 2.0f, 10.0f };
-//    const tcsg_f3 inside = { outside.x - wall_thickness, outside.y - wall_thickness, outside.z - wall_thickness };
-//    const tcsg_f3 window = { inside.x / 10.f, 1.0f, wall_thickness };
-//
-//    tcsg_user_data concreate;
-//    tcsg_user_data glass;
-//    tcsg_user_data lawn;
-//
-//    concreate.i = 0;
-//    glass.i = 12;
-//    lawn.i = 7;
-//
-//    {
-//        tcsg_f3 at = { 0.0f, -10.0f, 0.0f };
-//        tcsg_polygon_vector acc = tcsg_cube(lawn, &at, &ground);
-//        at.y += (ground.y + outside.y) / 2.0f;
-//        for (int floor = 0; floor < 10; ++floor) {
-//            tcsg_polygon_vector os = tcsg_cube(concreate, &at, &outside);
-//            tcsg_polygon_vector is = tcsg_cube(concreate, &at, &inside);
-//            tcsg_polygon_vector l = tcsg_subtract(&os, &is);
-//            tcsg_polygon_vector r = tcsg_union(&acc, &l);
-//            {
-//                float window_end = inside.x + window.x / 2.f;
-//                float window_start = -window_end;
-//                float window_step = window.x + 0.2f;
-//                for (float p = window_start; p < window_end; p += window_step) {
-//                    tcsg_f3 at = { p, -10.0f, 0.0f };
-//                    tcsg_polygon_vector is = tcsg_cube(concreate, &at, &inside);
-//                }
-//            }
-//            
-//
-//            tcsg_polygon_vector_free(&acc);
-//            tcsg_polygon_vector_free(&l);
-//            tcsg_polygon_vector_free(&is);
-//            tcsg_polygon_vector_free(&os);
-//            acc = r;
-//            at.y += outside.y;
-//        }
-//
-//        {
-//            tcsg_polygon_vector res = tcsg_merge(&acc);
-//            tcsg_polygon_vector_free(&acc);
-//
-//            o = tcsg_new_model(&res);
-//            tcsg_polygon_vector_free(&res);
-//        }
-//    }
-//
-//    return o;
-//}
+
+typedef tcsg_polygon_vector (*tcsg_op)(tcsg_polygon_vector* i_a, tcsg_polygon_vector* i_b);
+tcsg_polygon_vector tcsg_exp(tcsg_polygon_vector i_a, tcsg_polygon_vector i_b, tcsg_op i_op)
+{
+    tcsg_polygon_vector o = i_op(&i_a, &i_b);
+    tcsg_polygon_vector_free(&i_a);
+    tcsg_polygon_vector_free(&i_b);
+    return o;
+}
+
+
+tcsg_model building()
+{
+    tcsg_model o;
+
+    tcsg_user_data concreate;
+    tcsg_user_data glass;
+    tcsg_user_data lawn;
+
+    concreate.i = 0;
+    glass.i = 12;
+    lawn.i = 7;
+
+    {
+        tcsg_f3 at = { 0.0f, -12.0f, 0.0f };
+        tcsg_f3 ground = { 20.0f, 1.0f, 20.0f };
+        tcsg_polygon_vector acc = tcsg_cube(lawn, at, ground);
+
+
+        at = tcsg_f3_add(at, tcsg_f3_new(0.0f, 1.1f, 0.0f));
+        for (float floor = -10; floor < 10.0f; floor += 4.f) {
+            tcsg_f3 at = { 0.0f, floor, 0.0f };
+            tcsg_f3 outside = { 10.0f, 2.0f, 10.0f };
+            tcsg_f3 inside = { 9.1f, 1.9f, 9.1f };
+
+            acc = tcsg_exp(acc, tcsg_cube(concreate, at, outside), tcsg_union);
+            acc = tcsg_exp(acc, tcsg_cube(concreate, at, inside), tcsg_subtract);
+           /* tcsg_polygon_vector level = tcsg_exp(
+                tcsg_cube(concreate, at, outside),
+                tcsg_cube(concreate, at, inside),
+            tcsg_subtract);*/
+
+           // tcsg_polygon_vector level = tcsg_cube_c(concreate, at);
+
+            // 19.6 m internal
+            // 9 windows
+            // 2 meters high
+            // 
+            for (int w = -4; w <= 4; ++w) {
+                tcsg_f3 x_axis_dims = { 0.6f, 0.8f, 3.0f };
+                tcsg_f3 z_axis_dims = { 3.0f, 0.8f, 0.6f };
+                tcsg_f3 w_px = { 2.0f * w, tcsg_f3_y(at), 9.0f };
+                tcsg_f3 w_nx = { 2.0f * w, tcsg_f3_y(at), -9.1f };
+                tcsg_f3 w_pz = { 9.1f, tcsg_f3_y(at), 2.0f * w };
+                tcsg_f3 w_nz = { -9.1f, tcsg_f3_y(at), 2.0f * w };
+
+                acc = tcsg_exp(
+                    acc,
+                    tcsg_cube(glass, w_px, x_axis_dims),
+                tcsg_subtract);
+
+                acc = tcsg_exp(
+                    acc,
+                    tcsg_cube(glass, w_nx, x_axis_dims),
+                    tcsg_subtract);
+
+                acc = tcsg_exp(
+                    acc,
+                    tcsg_cube(glass, w_pz, z_axis_dims),
+                tcsg_subtract);
+
+                acc = tcsg_exp(
+                    acc,
+                    tcsg_cube(glass, w_nz, z_axis_dims),
+                tcsg_subtract);
+            }
+        }
+
+        {
+            tcsg_polygon_vector res = tcsg_merge(&acc);
+            tcsg_polygon_vector_free(&acc);
+
+            o = tcsg_new_model(&res);
+            tcsg_polygon_vector_free(&res);
+        }
+    }
+
+    return o;
+}
 
 int main(int i_argc, char** i_argv)
 {
     const tcsg_f3 one = { 1.f, 1.f, 1.f };
     tcsg_user_data m = { 0 };
-    tcsg_polygon_vector a = colourize(tcsg_cube(m, NULL, NULL), 0);
-    tcsg_polygon_vector b = colourize(tcsg_cube(m, &one, NULL), 6);
+    tcsg_polygon_vector a = colourize(tcsg_cube_(m), 0);
+    tcsg_polygon_vector b = colourize(tcsg_cube_c(m, one), 6);
 
     tcsg_polygon_vector aUb = tcsg_union(&a, &b);
     tcsg_polygon_vector aIb = tcsg_intersect(&a, &b);
@@ -1414,7 +1462,7 @@ int main(int i_argc, char** i_argv)
     tcsg_model aIbm = tcsg_new_model(&aIb);
     tcsg_model aSbm = tcsg_new_model(&aSb);
     tcsg_model aSbMm = tcsg_new_model(&aSbM);
-  //  tcsg_model buildingm = building();
+    tcsg_model buildingm = building();
 
     tcsg_model* models[] = {
         &am,
@@ -1422,7 +1470,7 @@ int main(int i_argc, char** i_argv)
         &aIbm,
         &aSbm,
         &aSbMm,
-        //&buildingm,
+        &buildingm,
     };
 
     tcsg_polygon_vector_free(&a);
@@ -1446,11 +1494,11 @@ int main(int i_argc, char** i_argv)
 
 
         static float ftime = 0.0f;// 0.001f*(float)itime;
-        ftime += 0.01f;
+        ftime += 0.002f;
 
         // animate
-        float pos[3] = { 3.0f*cosf(ftime*1.0f),
-            3.0f*cosf(ftime*0.6f),
+        float pos[3] = { 30.0f*cosf(ftime*1.0f),
+            30.0f*cosf(ftime*0.6f),
             3.0f*sinf(ftime*1.0f) };
         float tar[3] = { 0.0f, 0.0f, 0.0f };
 
