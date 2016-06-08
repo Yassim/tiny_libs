@@ -1368,6 +1368,8 @@ tcsg_polygon_vector tcsg_exp(tcsg_polygon_vector i_a, tcsg_polygon_vector i_b, t
 
 tcsg_model building()
 {
+    // a very silly example
+    // this is more for stress testing the code, and to notice changes in the f3 code.
     tcsg_model o;
 
     tcsg_user_data concreate;
@@ -1385,24 +1387,14 @@ tcsg_model building()
 
 
         at = tcsg_f3_add(at, tcsg_f3_new(0.0f, 1.1f, 0.0f));
-        for (float floor = -10; floor < 10.0f; floor += 4.f) {
+        for (float floor = -10; floor < 20.0f; floor += 4.f) {
             tcsg_f3 at = { 0.0f, floor, 0.0f };
             tcsg_f3 outside = { 10.0f, 2.0f, 10.0f };
             tcsg_f3 inside = { 9.1f, 1.9f, 9.1f };
 
             acc = tcsg_exp(acc, tcsg_cube(concreate, at, outside), tcsg_union);
             acc = tcsg_exp(acc, tcsg_cube(concreate, at, inside), tcsg_subtract);
-           /* tcsg_polygon_vector level = tcsg_exp(
-                tcsg_cube(concreate, at, outside),
-                tcsg_cube(concreate, at, inside),
-            tcsg_subtract);*/
 
-           // tcsg_polygon_vector level = tcsg_cube_c(concreate, at);
-
-            // 19.6 m internal
-            // 9 windows
-            // 2 meters high
-            // 
             for (int w = -4; w <= 4; ++w) {
                 tcsg_f3 x_axis_dims = { 0.6f, 0.8f, 3.0f };
                 tcsg_f3 z_axis_dims = { 3.0f, 0.8f, 0.6f };
