@@ -1,7 +1,7 @@
 // Variant of https://github.com/nothings/stb/blob/master/stretchy_buffer.h
 //  Really only good for POD types..
 //
-#define tv_free(a)              ((a) ? free(tv__sbraw(a)),0 : 0)
+#define tv_free(a)              ((a) ? tv__free(tv__sbraw(a)),0 : 0)
 #define tv_pushback(a,v)        (tv__sbmaybegrow(a,1), (a)[tv__sbn(a)++] = (v))
 
 //#define tv_insert(a,i,v)    { tv__sbmaybegrow(a,1); for(int j = tv__sbn(a); j >= i; --j) { (a)[j] = (a)[j - 1]; }; tv__sbn(a)++; } ((a)[i] = (v))
@@ -16,6 +16,7 @@
 
 #define tv_count(a)             ((a) ? tv__sbn(a) : 0)
 #define tv_resize(a,n)          (tv__sbmaybegrow(a,n), tv__sbn(a)+=(n), &(a)[tv__sbn(a) - (n)])
+#define tv_reserve(a,n)         (tv__sbmaybegrow(a,n))
 #define tv_head(a)              ((a)[0])
 #define tv_tail(a)              ((a)[tv_count(a)-1])
 
@@ -31,33 +32,44 @@
 
 #define tv_revese(t,a)          if (tv_count(a)) for(t *s = tv_begin(a), *e = tv_end(a) - 1; s < e; ++s, --e) { t tmp = *s; *s = *e; *e = tmp; }
 
-#define tv__sbraw(a)            ((int *) (a) - 2)
-#define tv__sbm(a)              tv__sbraw(a)[0]
-#define tv__sbn(a)              tv__sbraw(a)[1]
+
+typedef struct {
+    int count;
+    int capacity;
+    int pad[2]; // easier to controll padding
+} tv__head;
+
+
+#define tv__sbraw(a)            ((tv__head *) (a) - 1)
+#define tv__sbm(a)              tv__sbraw(a)->capacity
+#define tv__sbn(a)              tv__sbraw(a)->count
 
 #define tv__sbneedgrow(a,n)     ((a)==0 || tv__sbn(a)+(n) >= tv__sbm(a))
 #define tv__sbmaybegrow(a,n)    (tv__sbneedgrow(a,(n)) ? tv__sbgrow(a,n) : 0)
 #define tv__sbgrow(a,n)         ((*(void**)&(a)) = tv__sbgrowf((a), (n), sizeof(*(a))))
 
-#if !defined(tv_realloc)
+#if !defined(tv__realloc)
 #include <stdlib.h>
-#define tv_realloc(P, N) realloc((P), (N))
+#define tv__realloc(P, N) realloc((P), (N))
+#define tv__free(P)       free((P))
 #endif
 
 static void * tv__sbgrowf(void *arr, int increment, int itemsize)
 {
-     int dbl_cur = arr ? 2 * tv__sbm(arr) : 0;
-     int min_needed = tv_count(arr) + increment;
-     int m = dbl_cur > min_needed ? dbl_cur : min_needed;
-     int *p = (int *)tv_realloc(arr ? tv__sbraw(arr) : 0, itemsize * m + sizeof(int) * 2);
-     
-     // explode now if out of memory
-     if (!arr)
-         p[1] = 0;
-     p[0] = m;
+    int dbl_cur = arr ? 2 * tv__sbm(arr) : 0;
+    int min_needed = tv_count(arr) + increment;
+    int m = dbl_cur > min_needed ? dbl_cur : min_needed;
+    tv__head *op = arr ? tv__sbraw(arr) : 0;
+    tv__head *np = (tv__head *)tv__realloc(op, itemsize * m + sizeof(tv__head));
 
-     return p + 2;
+    // explode now if out of memory
+    if (!arr)
+        np->count = 0;
+    np->capacity = m;
+
+    return np + 1;
 }
+
 
 #define tv_imp_find(t)                          \
  static int tv_find_##t(t* i_a, t i_v) {        \
