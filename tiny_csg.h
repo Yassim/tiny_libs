@@ -158,6 +158,9 @@ void tcsg_model_free(tcsg_model* i_self);
 #include <memory.h>
 
 // Defines
+#if !defined(tcsg_tracef)
+#define tcsg_tracef (void)
+#endif
 
 //#define tcsg_malloc(N)      malloc((N))
 #if !defined(TCSG_HAVE_MEMORY)
@@ -469,52 +472,52 @@ void tcsg__split(const tcsg_plane* i_p, tcsg_polygon** i_begin, tcsg_polygon** i
 
         switch ((tcsg_plane_test)all_tests)
         {
-        case tcsg_k_co_plane: {
-            tcsg_polygon_vector* o = ((o_co_front == o_co_back) || (tcsg_f3_dot(i_p->normal, (*pi)->plane.normal) > 0.0f)) ? o_co_front : o_co_back;
-            tcsg_polygon_vector_pushback(o, *pi);
-        } break;
-        case tcsg_k_front: tcsg_polygon_vector_pushback(o_front, *pi); break;
-        case tcsg_k_back:  tcsg_polygon_vector_pushback(o_back, *pi); break;
-        case tcsg_k_spanning: {
-            tcsg_polygon* nf = tcsg_polygon_new((*pi)->user, (*pi)->count + 1, NULL);
-            tcsg_polygon* nb = tcsg_polygon_new((*pi)->user, (*pi)->count + 1, NULL);
-            tcsg_vert* vf = nf->verts;
-            tcsg_vert* vb = nb->verts;
-            const tcsg_plane_test* ti = tests;
+            case tcsg_k_co_plane: {
+                tcsg_polygon_vector* o = ((o_co_front == o_co_back) || (tcsg_f3_dot(i_p->normal, (*pi)->plane.normal) > 0.0f)) ? o_co_front : o_co_back;
+                tcsg_polygon_vector_pushback(o, *pi);
+            } break;
+            case tcsg_k_front: tcsg_polygon_vector_pushback(o_front, *pi); break;
+            case tcsg_k_back:  tcsg_polygon_vector_pushback(o_back, *pi); break;
+            case tcsg_k_spanning: {
+                tcsg_polygon* nf = tcsg_polygon_new((*pi)->user, (*pi)->count + 1, NULL);
+                tcsg_polygon* nb = tcsg_polygon_new((*pi)->user, (*pi)->count + 1, NULL);
+                tcsg_vert* vf = nf->verts;
+                tcsg_vert* vb = nb->verts;
+                const tcsg_plane_test* ti = tests;
 
-            for (int i = 0; i < (*pi)->count; ++i) {
-                int j = (i + 1) % (*pi)->count;
+                for (int i = 0; i < (*pi)->count; ++i) {
+                    int j = (i + 1) % (*pi)->count;
 
-                if (ti[i] != tcsg_k_back) {
-                    *vf++ = (*pi)->verts[i];
+                    if (ti[i] != tcsg_k_back) {
+                        *vf++ = (*pi)->verts[i];
+                    }
+                    if (ti[i] != tcsg_k_front) {
+                        *vb++ = (*pi)->verts[i];
+                    }
+                    if ((ti[i] | ti[j]) == tcsg_k_spanning) {
+                        const tcsg_f3 vpi = tcsg_vert_position((*pi)->verts + i);
+                        const tcsg_f3 vpj = tcsg_vert_position((*pi)->verts + j);
+                        const tcsg_f3 vpj_vpi = tcsg_f3_sub(vpj, vpi);
+                        const float dn_vpi = tcsg_f3_dot(i_p->normal, vpi);
+                        const float dn_vpj_vpi = tcsg_f3_dot(i_p->normal, vpj_vpi);
+                        const float t = (i_p->d - dn_vpi) / dn_vpj_vpi;
+                        const tcsg_vert nv = tcsg_vert_lerp((*pi)->verts + i, (*pi)->verts + j, t);
+                        *vf++ = nv;
+                        *vb++ = nv;
+                    }
                 }
-                if (ti[i] != tcsg_k_front) {
-                    *vb++ = (*pi)->verts[i];
-                }
-                if ((ti[i] | ti[j]) == tcsg_k_spanning) {
-                    const tcsg_f3 vpi = tcsg_vert_position((*pi)->verts + i);
-                    const tcsg_f3 vpj = tcsg_vert_position((*pi)->verts + j);
-                    const tcsg_f3 vpj_vpi = tcsg_f3_sub(vpj, vpi);
-                    const float dn_vpi = tcsg_f3_dot(i_p->normal, vpi);
-                    const float dn_vpj_vpi = tcsg_f3_dot(i_p->normal, vpj_vpi);
-                    const float t = (i_p->d - dn_vpi) / dn_vpj_vpi;
-                    const tcsg_vert nv = tcsg_vert_lerp((*pi)->verts + i, (*pi)->verts + j, t);
-                    *vf++ = nv;
-                    *vb++ = nv;
-                }
-            }
 
-            nf->count = vf - nf->verts;
-            nf->plane = (*pi)->plane;
-            nf->user = (*pi)->user;
+                nf->count = vf - nf->verts;
+                nf->plane = (*pi)->plane;
+                nf->user = (*pi)->user;
 
-            nb->count = vb - nb->verts;
-            nb->plane = (*pi)->plane;
-            nb->user = (*pi)->user;
+                nb->count = vb - nb->verts;
+                nb->plane = (*pi)->plane;
+                nb->user = (*pi)->user;
 
-            tcsg_polygon_vector_pushback(o_front, nf);
-            tcsg_polygon_vector_pushback(o_back, nb);
-        } break;
+                tcsg_polygon_vector_pushback(o_front, nf);
+                tcsg_polygon_vector_pushback(o_back, nb);
+            } break;
         }
     }
 
@@ -530,7 +533,7 @@ void tcsg_polygon_vector_pushback(tcsg_polygon_vector* i_self, tcsg_polygon* i_v
 
 void tcsg_polygon_vector_remove(tcsg_polygon_vector* i_self, tcsg_polygon* i_value)
 {
-    tv_foreach(tcsg_polygon*, i, i_self->polys) {
+    tv_foreach_f(tcsg_polygon_ptr, i, i_self->polys) {
         if (*i == i_value) {
             tcsg_polygon_decref(i_value);
             tv_remove_f(i_self->polys, i);
@@ -863,16 +866,16 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
         next_poly:{}
     }
 
-//    printf("groups %d\n", tv_count(groups));
+    tcsg_tracef("groups %d\n", tv_count(groups));
 
-    tv_foreach_f(tcsg__plane_key, ei, groups) {
-        if (tv_count(ei->list) == 1) {
+    tv_foreach_f(tcsg__plane_key, gi, groups) {
+        if (tv_count(gi->list) == 1) {
             // only 1 poly, on this plane.. push it to the result.
-            tcsg_polygon_vector_pushback(&o, ei->list[0]);
+            tcsg_polygon_vector_pushback(&o, gi->list[0]);
         } else {
             tcsg__edge_key* edges = 0;
             // make all edges clockwise.
-            tv_foreach_f(tcsg_polygon_ptr, pi, ei->list) {
+            tv_foreach_f(tcsg_polygon_ptr, pi, gi->list) {
                 tcsg_polygon* p = *pi;
                 for (int i = 0; i < p->count; ++i) {
                     tcsg__edge_key e;
@@ -884,9 +887,11 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
                 }
             }
 
+            tcsg_tracef(" + polys %d, edges %d\n", tv_count(gi->list), tv_count(edges));
+
             // search anti clockwise
             tcsg_polygon** merged = 0;
-            tv_foreach_f(tcsg_polygon_ptr, pi, ei->list) {
+            tv_foreach_f(tcsg_polygon_ptr, pi, gi->list) {
                 tcsg_polygon* p = *pi;
 
                 tv_foreach_f(tcsg_polygon_ptr, mi, merged) { // find
@@ -990,6 +995,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
                 tcsg_polygon_vector_pushback(&o, p);
             }
 
+            tcsg_tracef("++ megred %d\n", tv_count(merged));
             tv_free(merged); merged = 0;
         }
     }
