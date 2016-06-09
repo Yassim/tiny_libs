@@ -944,8 +944,10 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
                         const tcsg_f3 b1_2 = tcsg_f3_sub(b2, b1);
                         const tcsg_f3 b3_4 = tcsg_f3_sub(b4, b3);
 
-                        const float d1 = 1.f + tcsg_f3_dot(a1_2, b1_2);
-                        const float d2 = 1.f + tcsg_f3_dot(a3_4, b3_4);
+                        const float d1 = 1.f + tcsg_f3_dot(tcsg_f3_normalise(a1_2), tcsg_f3_normalise(b1_2));
+                        const float d2 = 1.f + tcsg_f3_dot(tcsg_f3_normalise(a3_4), tcsg_f3_normalise(b3_4));
+
+                        tcsg_tracef("-- d1 %f, d2 %f\n", d1, d2);
 
                         if ((d1 > -tcsg_k_epsilon) && (d1 < tcsg_k_epsilon)
                         && (d2 > -tcsg_k_epsilon) && (d2 < tcsg_k_epsilon)) {
@@ -1006,6 +1008,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
     }
     tv_free(groups);
 
+    tcsg_tracef("\n");
     return o;
 }
 
