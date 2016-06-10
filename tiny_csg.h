@@ -844,6 +844,8 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
     */
 
     tcsg__plane_key * groups = 0;
+    int orignal_poly_count = tv_count(i_list->polys);
+    tcsg_tracef("polys in %d\n", orignal_poly_count);
     
     // group by plane.. if they dont share a plane, the cant be merged. material can be added her as well.
     //for (tcsg_polygon** pi = tv_begin(i_list->polys), **pe = tv_end(i_list->polys); pi != pe; ++pi) {
@@ -947,7 +949,7 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
                         const float d1 = 1.f + tcsg_f3_dot(tcsg_f3_normalise(a1_2), tcsg_f3_normalise(b1_2));
                         const float d2 = 1.f + tcsg_f3_dot(tcsg_f3_normalise(a3_4), tcsg_f3_normalise(b3_4));
 
-                        tcsg_tracef("-- d1 %f, d2 %f\n", d1, d2);
+                        //tcsg_tracef("-- d1 %f, d2 %f\n", d1, d2);
 
                         if ((d1 > -tcsg_k_epsilon) && (d1 < tcsg_k_epsilon)
                         && (d2 > -tcsg_k_epsilon) && (d2 < tcsg_k_epsilon)) {
@@ -1008,6 +1010,9 @@ tcsg_polygon_vector tcsg_merge(tcsg_polygon_vector* i_list)
     }
     tv_free(groups);
 
+
+    int final_poly_count = tv_count(o.polys);
+    tcsg_tracef("polys in %d => polys out %d (%f%%)\n", orignal_poly_count, final_poly_count, 100.0 * (final_poly_count/ (double)orignal_poly_count));
     tcsg_tracef("\n");
     return o;
 }
