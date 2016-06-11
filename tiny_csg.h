@@ -391,9 +391,9 @@ tcsg_polygon* tcsg_polygon_new(tcsg_user_data i_ud, int i_count, const tcsg_vert
     tcsg_polygon* o = (tcsg_polygon*)tcsg_malloc(sizeof(tcsg_polygon) + sizeof(tcsg_vert) * (i_count - 1));
     o->ref_count = 0;
     o->count = i_count;
+    o->user = i_ud;
     if (i_pnts) {
         o->plane = tcsg_plane_new(i_pnts, i_pnts + 1, i_pnts + 2);
-        o->user = i_ud;
         memcpy(o->verts, i_pnts, sizeof(tcsg_vert) * i_count);
     }
     return o;
@@ -556,7 +556,21 @@ void tcsg_polygon_vector_concat(tcsg_polygon_vector* i_lhs, tcsg_polygon_vector*
 void tcsg_polygon_vector_invert(tcsg_polygon_vector* i_list)
 {
     tv_foreach_f(tcsg_polygon_ptr, pi, i_list->polys) {
-        tcsg_polygon_invert(*pi);
+        if ((*pi)->ref_count == 1) {
+            tcsg_polygon_invert(*pi);
+        } else {
+            tcsg_polygon_ptr op = *pi;
+            tcsg_polygon_ptr np = tcsg_polygon_new(op->user, op->count, NULL);
+            np->plane = op->plane;
+            tcsg_plane_invert(&np->plane);
+            for (tcsg_vert *i = op->verts, *e = op->verts + op->count, *j = np->verts + op->count - 1; i != e; ++i, --j) {
+                *j = *i;
+                j->normal = tcsg_f3_invert(j->normal);
+            }
+            tcsg_polygon_decref(op);
+            tcsg_polygon_incref(np);
+            *pi = np;
+        }
     }
 }
 
