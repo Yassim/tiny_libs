@@ -53,6 +53,7 @@ float   tcsg_f3_dot(const tcsg_f3 i_a, const tcsg_f3 i_b);
 tcsg_f3 tcsg_f3_normalise(const tcsg_f3 i_a);
 tcsg_f3 tcsg_f3_invert(const tcsg_f3 i_a);
 tcsg_f3 tcsg_f3_sub(const tcsg_f3 i_a, const tcsg_f3 i_b);
+tcsg_f3 tcsg_f3_add(const tcsg_f3 i_a, const tcsg_f3 i_b);
 tcsg_f3 tcsg_f3_scale(const tcsg_f3 i_a, float i_f);
 tcsg_f3 tcsg_f3_new(float i_x, float i_y, float i_z);
 #endif // TCSG_HAVE_F3
@@ -171,6 +172,7 @@ void tcsg_model_free(tcsg_model* i_self);
 #endif
 #define tcsg__max(A, B)     (((A) > (B)) ? (A) : (B))
 
+#include 	<malloc.h>
 #define tcsg_alloca(N)  _malloca((N))
 #define tcsg_freea(P)   _freea((P))
 
@@ -308,6 +310,15 @@ tcsg_f3 tcsg_f3_sub(const tcsg_f3 i_a, const tcsg_f3 i_b)
     o.y = i_a.y - i_b.y;
     o.z = i_a.z - i_b.z;
     return o;
+}
+
+tcsg_f3 tcsg_f3_add(const tcsg_f3 i_a, const tcsg_f3 i_b)
+{
+	tcsg_f3 o;
+	o.x = i_a.x + i_b.x;
+	o.y = i_a.y + i_b.y;
+	o.z = i_a.z + i_b.z;
+	return o;
 }
 
 tcsg_f3 tcsg_f3_scale(const tcsg_f3 i_a, float i_f)
