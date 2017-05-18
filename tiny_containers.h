@@ -27,21 +27,21 @@
 //
 // Common API
 // (tc prefix)
-#define tc_count(a)             ((a) ? tc__sbn(a) : 0)
-#define tc_capacity(a)          ((a) ? tc__sbm(a) : 0)
-#define tc_reserve(a,n)         (tc__sbmaybegrow(a,n))
+#define tc_count(a)             ((a) ? tc__n(a) : 0)
+#define tc_capacity(a)          ((a) ? tc__m(a) : 0)
+#define tc_reserve(a,n)         (tc__maybegrow(a,n))
 
 //
 // Vector
 // (tv prefix)
-#define tv_free(a)              ((a) ? rt_free(tv__sbraw(a)),0 : 0)
-#define tv_pushback(a,v)        (tv__sbmaybegrow(a,1), (a)[tv__sbn(a)++] = (v))
-#define tv_insert(a,i,v)        (tv__sbmaybegrow(a,1), tc__move((i)+1, i, a), tv__sbn(a)++, ((a)[i] = (v)))
-#define tv_remove(a,i)          (tc__move(i, (i)+1, a), tv__sbn(a)--, (i)-1)
+#define tv_free(a)              ((a) ? rt_free(tv__raw(a)),0 : 0)
+#define tv_pushback(a,v)        (tv__maybegrow(a,1), (a)[tv__n(a)++] = (v))
+#define tv_insert(a,i,v)        (tv__maybegrow(a,1), tc__move((i)+1, i, a), tv__n(a)++, ((a)[i] = (v)))
+#define tv_remove(a,i)          (tc__move(i, (i)+1, a), tv__n(a)--, (i)-1)
 
-#define tv_count(a)             ((a) ? tv__sbn(a) : 0)
-#define tv_resize(a,n)          (tv__sbmaybegrow(a,n), tv__sbn(a)+=(n), &(a)[tv__sbn(a) - (n)])
-#define tv_reserve(a,n)         (tv__sbmaybegrow(a,n))
+#define tv_count(a)             ((a) ? tv__n(a) : 0)
+#define tv_resize(a,n)          (tv__maybegrow(a,n), tv__n(a)+=(n), &(a)[tv__n(a) - (n)])
+#define tv_reserve(a,n)         (tv__maybegrow(a,n))
 #define tv_head(a)              ((a)[0])
 #define tv_tail(a)              ((a)[tc_count(a)-1])
 
@@ -52,17 +52,18 @@
 //
 // Map
 // (tm prefix)
-#define tm_init(a, c, kop)		(tm_reserve(a, c), tc__sbraw(a)->op = kop)
-#define tm_free(a)              ((a) ? rt_free(tc__sbraw(a)),0 : 0)
+#define tm_init(a, c, kop)		(tm_reserve(a, c), tc__raw(a)->op = kop)
+#define tm_free(a)              ((a) ? rt_free(tc__raw(a)),0 : 0)
+#define tm_reserve(a,n)         (tc__maybegrow(a,n))
 
 #define tm_index(a,k)			(tm__find(a, &a->Key, sizeof(*(a)), k))
-#define tm_count(a)             ((a) ? tv__sbn(a) : 0)
+#define tm_count(a)             ((a) ? tc__n(a) : 0)
 
-#define tm_find(a, k)			(tm_index(a,k) > 0 ? (void*)&((a)[tc__lfr(a)].Value) : NULL)
-#define tm_add(a,k,v)			(tm_index(a,k) > 0 ? ((a)[tc__lfr(a)].Value = (v)) : (tc__inserti(a,tm__lfri(a)), (a)[tm__lfri(a)].Key = (k), (a)[tm__lfri(a)].Value = (v)))
-#define tm_get(a,k)				(tm_index(a,k) > 0 ? ((a)[tc__lfr(a)].Value) : (tc__inserti(a,tm__lfri(a)), (a)[tm__lfri(a)].Key = (k), (a)[tm__lfri(a)].Value))
+#define tm_find(a, k)			(tm_index(a,k) >= 0 ? (void*)&((a)[tc__lfr(a)].Value) : NULL)
+#define tm_add(a,k,v)			(tm_index(a,k) >= 0 ? ((a)[tc__lfr(a)].Value = (v)) : (tc__spacei(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value = (v)))
+#define tm_get(a,k)				(tm_index(a,k) >= 0 ? ((a)[tc__lfr(a)].Value) : (tc__inserti(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value))
 #define tm_at(a,k)				((a)[tm_index(a,k)].Value)
-#define tm_del(a,k)				(tm_index(a,k) > 0 ? tc__removei(a, tm__lfr(a)) : (a))
+#define tm_del(a,k)				(tm_index(a,k) >= 0 ? tc__removei(a, tm__lfr(a)) : (a))
 
 #define tm_begin(a)             ((a))
 #define tm_end(a)               ((a) + tm_count(a))
@@ -71,13 +72,13 @@
 //
 // Set
 // (ts prefix)
-#define ts_init(a, c, kop)		(tm_reserve(a, c), tm__sbraw(a)->op = kop)
-#define ts_free(a)              ((a) ? rt_free(tm__sbraw(a)),0 : 0)
+#define ts_init(a, c, kop)		(tm_reserve(a, c), tm__raw(a)->op = kop)
+#define ts_free(a)              ((a) ? rt_free(tm__raw(a)),0 : 0)
 
-#define ts_count(a)             ((a) ? tv__sbn(a) : 0)
+#define ts_count(a)             ((a) ? tv__n(a) : 0)
 #define ts_index(a,k)			(tm__find(a, &a->Key, sizeof(*(a)), k))
 #define ts_contains(a,k)		(tm__find(a, &a->Key, sizeof(*(a)), k) > 0)
-#define ts_add(a,k)				(tm_index(a,k) > 0 ? ((k)) : (tc__inserti(a,tm__lfri(a)), (a)[tm__lfri(a)].Key = (k)))
+#define ts_add(a,k)				(tm_index(a,k) > 0 ? ((k)) : (tc__inserti(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k)))
 #define ts_del(a,k)				(tm_index(a,k) > 0 ? tc__removei(a, tm__lfr(a)) : (a))
 
 #define ts_begin(a)             ((a))
@@ -89,9 +90,9 @@
 typedef unsigned int* tbs_set;
 enum { tbs_bitcount = 32 };
 
-#define tbs_init(a, c)			(tv__sbmaybegrow(a,(c)/tbs_bitcount), tv__sbn(a)+=((c)/tbs_bitcount))
-#define tbs_free(a)				((a) ? rt_free(tm__sbraw(a)),0 : 0)
-#define tbs_count(a)            ((a) ? (tv__sbn(a) * tbs_bitcount) : 0)
+#define tbs_init(a, c)			(tv__maybegrow(a,(c)/tbs_bitcount), tv__n(a)+=((c)/tbs_bitcount))
+#define tbs_free(a)				((a) ? rt_free(tm__raw(a)),0 : 0)
+#define tbs_count(a)            ((a) ? (tv__n(a) * tbs_bitcount) : 0)
 #define tbs_get(a, i)			(0 != ((a)[i/tbs_bitcount] & (1 << (i % tbs_bitcount))))
 #define tbs_set(a, i, v)		((v) ? tbs_set1(a, i) : tbs_set0(a, i))
 #define tbs_set1(a, i)			((a)[i/tbs_bitcount] |= (1 << (i % tbs_bitcount)))
@@ -101,22 +102,23 @@ enum { tbs_bitcount = 32 };
 // Details
 //  Private(ish)
 //
-#define tc__max(a, b)           ((a) > (b) ? (a) : (b))
-#define tc__move(a,d,s)          memmove((d), (s), sizeof(*(a)) * (tv_end(a) - tc__max(s, d)))
+#define tc__max(a, b)          ((a) > (b) ? (a) : (b))
+#define tc__move(a,d,s)        memmove((d), (s), sizeof(*(a)) * (tv_end(a) - tc__max(s, d)))
 
-#define tc__inserti(a,i,v)       (tm__sbmaybegrow(a,1), memmove((a)+i+1, (a)+i, (tm__sbn(a) - i + 1) * sizeof(*(a))), tm__sbn(a)++, ((a)[i] = (v)))
-#define tc__removei(a,i)         (memmove((a)+i, (a)+i+1, (tm__sbn(a) - i + 1) * sizeof(*(a))), tm__sbn(a)--, ((a)+i))
+#define tc__spacei(a,i)        (tc__maybegrow(a,1), memmove((a)+i+1, (a)+i, (tc__n(a) - i + 1) * sizeof(*(a))), tc__n(a)++)
+#define tc__inserti(a,i,v)     (tc__maybegrow(a,1), memmove((a)+i+1, (a)+i, (tc__n(a) - i + 1) * sizeof(*(a))), tc__n(a)++, ((a)[i] = (v)))
+#define tc__removei(a,i)       (memmove((a)+i, (a)+i+1, (tc__n(a) - i + 1) * sizeof(*(a))), tc__n(a)--, ((a)+i))
 
 
-#define tc__sbraw(a)            ((tc__head *) (a) - 1)
-#define tc__sbm(a)              tc__sbraw(a)->capacity
-#define tc__sbn(a)              tc__sbraw(a)->count
-#define tc__lfr(a)              tc__sbraw(a)->last_found
-#define tc__lfri(a)             ((-tc__sbraw(a)->last_found) - 1)
+#define tc__raw(a)             ((tc__head *) (a) - 1)
+#define tc__m(a)               tc__raw(a)->capacity
+#define tc__n(a)               tc__raw(a)->count
+#define tc__lfr(a)             tc__raw(a)->last_found
+#define tc__lfri(a)            ((-tc__raw(a)->last_found) - 1)
 
-#define tc__sbneedgrow(a,n)     ((a)==0 || tc__sbn(a)+(n) >= tc__sbm(a))
-#define tc__sbmaybegrow(a,n)    (tc__sbneedgrow(a,(n)) ? tc__sbgrow(a,n) : 0)
-#define tc__sbgrow(a,n)         ((*(void**)&(a)) = tc__sbgrowf((a), (n), sizeof(*(a))))
+#define tc__needgrow(a,n)     ((a)==0 || tc__n(a)+(n) >= tc__m(a))
+#define tc__maybegrow(a,n)    (tc__needgrow(a,(n)) ? tc__grow(a,n) : 0)
+#define tc__grow(a,n)         ((*(void**)&(a)) = tc__growf((a), (n), sizeof(*(a))))
 
 
 typedef enum {
@@ -148,15 +150,16 @@ static int np2(int x)
 
 static void * tc__growf(void *arr, int increment, int itemsize)
 {
-	int dbl_cur = arr ? 2 * tc__sbm(arr) : 0;
+	int dbl_cur = arr ? 2 * tc__m(arr) : 0;
 	int min_needed = np2(tc_count(arr) + increment);
 	int m = dbl_cur > min_needed ? dbl_cur : min_needed;
-	tc__head *op = arr ? tc__sbraw(arr) : 0;
+	tc__head *op = arr ? tc__raw(arr) : 0;
 	tc__head *np = (tc__head *)rt_realloc(op, itemsize * m + sizeof(tc__head));
 
-	// explode now if out of memory
-	if (!np)
+	if (!op)
 		np->count = 0;
+
+	// explode now if out of memory
 	np->capacity = m;
 
 	return np + 1;
@@ -167,7 +170,7 @@ static int tm__find(void* m, void* k, int itemsize, ...)
 {
 	int o;
 	va_list v;
-	tc__head *op = m ? tc__sbraw(m) : 0;
+	tc__head *op = m ? tc__raw(m) : 0;
 	va_start(v, itemsize);
 	o = op->op(tccmd_find, k, op->count, itemsize, v);
 	op->last_found = o;
