@@ -49,6 +49,18 @@
 #ifndef rt_realloc
 #define rt_realloc(P, N)	realloc(P, N)
 #endif
+#ifndef rt_memmove
+#define rt_memmove(D, S, N)	memmove(D, S, N)
+#endif
+
+//
+// Compile time array
+//  type name[count];
+//  ta prefix
+#define ta_head(A)     A[0]
+#define ta_count(A)    (sizeof(A)/sizeof(A[0]))
+#define ta_tail(A)     A[ta_count(A)-1]
+
 
 //
 // Common API
@@ -67,11 +79,14 @@
 #define tv_insert(a,i,v)        (tc__maybegrow(a,1), tc__move((i)+1, i, a), tc__n(a)++, ((a)[i] = (v)))
 #define tv_remove(a,i)          (tc__move(i, (i)+1, a), tc__n(a)--, (i)-1)
 
-#define tv_resize(a,n)          (tc__maybegrow(a,n), tc__n(a)+=(n), &(a)[tc__n(a) - (n)])
+#define tv_resize(a,n)          (tc__maybegrow(a,n-tc_count(a)), tc__n(a)=(n), &(a)[tc__n(a) - (n)])
 #define tv_reserve(a,n)          tc_reserve(a,n) 
+#define tv_reset(a)             ((a) ? tc__n(a)=0 : 0)
 
 #define tv_head(a)              ((a)[0])
 #define tv_tail(a)              ((a)[tv_count(a)-1])
+#define tv_popback(a)           ((a)[--tc__n(a)])
+#define tv_popbackn(a, n)       ((a)[tc__n(a) -= (n)])
 
 #define tv_begin(a)             ((a))
 #define tv_end(a)               ((a) + tv_count(a))
@@ -100,7 +115,7 @@
 //
 // Map
 // (tm prefix)
-#define tm_init(a, c, kop)		(tm_reserve(a, c), tc__raw(a)->op = kop)
+#define tm_init(a, c, kop)		(tm_reserve(a, c), tc__raw(a)->op = kop, a)
 #define tm_free(a)               tc_free(a)     
 #define tm_count(a)              tc_count(a)    
 #define tm_reserve(a,n)          tc_reserve(a,n)
@@ -108,15 +123,15 @@
 #define tm_index(a,k)			(tc__find(a, &a->Key, sizeof(*(a)), k))
 
 #define tm_find(a, k)			(tm_index(a,k) >= 0 ? (void*)&((a)[tc__lfr(a)].Value) : NULL)
-#define tm_add(a,k,v)			(tm_index(a,k) >= 0 ? ((a)[tc__lfr(a)].Value = (v)) : (tc__spacei(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value = (v)))
+#define tm_add(a,k,v)			(tm_index(a,k) >= 0 ? \
+                                        ((a)[tc__lfr(a)].Value = (v)) : \
+                                        (tc__spacei(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value = (v)))
 #define tm_get(a,k)				(tm_index(a,k) >= 0 ? ((a)[tc__lfr(a)].Value) : (tc__inserti(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value))
 #define tm_at(a,k)				((a)[tm_index(a,k)].Value)
 #define tm_del(a,k)				(tm_index(a,k) >= 0 ? tc__removei(a, tc__lfr(a)) : (a))
 
 #define tm_begin(a)             ((a))
 #define tm_end(a)               ((a) + tm_count(a))
-
-
 
 
 //
@@ -137,8 +152,22 @@ enum { tbs_bitcount = 32 };
 #define tbs_set0(a, i)			((a)[i/tbs_bitcount] ^= (1 << (i % tbs_bitcount)))
 
 
+//
+// HashMap
+//  (thm prefix)
+#define thm_init(a, c, kop)		(tm_reserve(a, c), tc__raw(a)->op = kop)
+#define thm_free(a)              tc_free(a)     
+#define thm_count(a)             tc_count(a)    
+#define thm_reserve(a,n)         tc_reserve(a,n)
+#define thm_index(a,k)			(tc__docmd(tccmd_hfind, a, sizeof(*(a)), k, &a->Key, a + tc_capacity(a)))
+#define thm_find(a, k)			(thm_index(a,k) >= 0 ? (void*)&((a)[tc__lfr(a)].Value) : NULL)
+#define thm_add(a,k,v)			(thm_index(a,k) >= 0 ? ((a)[tc__lfr(a)].Value = (v)) : (tc__spacei(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value = (v)))
+#define thm_get(a,k)			(thm_index(a,k) >= 0 ? ((a)[tc__lfr(a)].Value) : (tc__inserti(a,tc__lfri(a)), (a)[tc__lfri(a)].Key = (k), (a)[tc__lfri(a)].Value))
+#define thm_at(a,k)				((a)[thm_index(a,k)].Value)
+#define thm_del(a,k)			(thm_index(a,k) >= 0 ? tc__removei(a, tc__lfr(a)) : (a))
 
-
+//#define thm_begin(a)            ((a))
+//#define thm_end(a)              ((a) + tm_count(a))
 
 //
 // Details
@@ -147,25 +176,27 @@ enum { tbs_bitcount = 32 };
 #define tc__max(a, b)          ((a) > (b) ? (a) : (b))
 #define tc__move(a,d,s)        memmove((d), (s), sizeof(*(a)) * (tv_end(a) - tc__max(s, d)))
 
-#define tc__spacei(a,i)        (tc__maybegrow(a,1), memmove((a)+i+1, (a)+i, (tc__n(a) - i + 1) * sizeof(*(a))), tc__n(a)++)
-#define tc__inserti(a,i,v)     (tc__maybegrow(a,1), memmove((a)+i+1, (a)+i, (tc__n(a) - i + 1) * sizeof(*(a))), tc__n(a)++, ((a)[i] = (v)))
-#define tc__removei(a,i)       (memmove((a)+i, (a)+i+1, (tc__n(a) - i + 1) * sizeof(*(a))), tc__n(a)--, ((a)+i))
+#define tc__spacei(a,i)        (tc__maybegrow(a,1), rt_memmove((a)+(i)+1, (a)+(i), (tc__n(a) - (i)) * sizeof(*(a))), tc__n(a)++)
+#define tc__inserti(a,i,v)     (tc__maybegrow(a,1), rt_memmove((a)+(i)+1, (a)+(i), (tc__n(a) - (i) + 1) * sizeof(*(a))), tc__n(a)++, ((a)[i] = (v)))
+#define tc__removei(a,i)       (rt_memmove((a)+(i), (a)+(i)+1, (tc__n(a) - (i) + 1) * sizeof(*(a))), tc__n(a)--, ((a)+(i)))
 
 
-#define tc__raw(a)             ((tc__head *) (a) - 1)
-#define tc__m(a)               tc__raw(a)->capacity
-#define tc__n(a)               tc__raw(a)->count
-#define tc__lfr(a)             tc__raw(a)->last_found
+#define tc__raw(a)             (((tc__head *) (a)) - 1)
+#define tc__m(a)               (tc__raw(a)->capacity)
+#define tc__n(a)               (tc__raw(a)->count)
+#define tc__lfr(a)             (tc__raw(a)->last_found)
 #define tc__lfri(a)            ((-tc__raw(a)->last_found) - 1)
 
 #define tc__needgrow(a,n)     ((a)==0 || tc__n(a)+(n) >= tc__m(a))
 #define tc__maybegrow(a,n)    (tc__needgrow(a,(n)) ? tc__grow(a,n) : 0)
-#define tc__grow(a,n)         ((*(void**)&(a)) = tc__growf((a), (n), sizeof(*(a))))
+//#define tc__grow(a,n)         ((*(void**)&(a)) = tc__growf((a), (n), sizeof(*(a))))
+//#define tc__grow(a,n)         ((a) = tc__growf((a), (n), sizeof(*(a))))
+#define tc__grow(a,n)         (tc__growf(&((void*)(a)), (n), sizeof(*(a))))
 
 
 typedef enum {
 	tccmd_find,
-	tccmd_hash,
+	tccmd_hfind,
 
 	tccmd_duplicate,
 	tccmd_destroydup,
@@ -198,8 +229,10 @@ static int np2(int x)
 	return x + 1;
 }
 
-static void * tc__growf(void *arr, int increment, int itemsize)
+//static void * tc__growf(void *arr, int increment, int itemsize)
+static void tc__growf(void **parr, int increment, int itemsize)
 {
+    void * arr = *parr;
 	int dbl_cur = arr ? 2 * tc__m(arr) : 0;
 	int min_needed = np2(tc_count(arr) + increment);
 	int m = dbl_cur > min_needed ? dbl_cur : min_needed;
@@ -212,7 +245,8 @@ static void * tc__growf(void *arr, int increment, int itemsize)
 	// explode now if out of memory
 	np->capacity = m;
 
-	return np + 1;
+	//return np + 1;
+    *parr = np + 1;
 }
 
 
@@ -228,12 +262,36 @@ static int tc__find(void* m, void* k, int itemsize, ...)
 	return o;
 }
 
+static int tc__hfind(void* container, void* first_key, int itemsize, ...)
+{
+	int o;
+	va_list v;
+	tc__head *op = container ? tc__raw(container) : 0;
+	va_start(v, itemsize);
+	o = op->op(tccmd_hfind, first_key, op->count, itemsize, v);
+	op->last_found = o;
+	va_end(v);
+	return o;
+}
+
+static int tc__docmd(tc__cmd cmd, void* c, int itemsize, ...)
+{
+	int o;
+	va_list v;
+	tc__head *op = c ? tc__raw(c) : 0;
+	va_start(v, itemsize);
+	o = op->op(cmd, c, op->count, itemsize, v);
+	op->last_found = o;
+	va_end(v);
+	return o;
+}
+
 //
 // Map and Set 'op' functions
 //  These are like SysOp functions in that they do a few different things
 //  depending on arguments passed.
 //
-int op_int(tc__cmd op, void * m, int count, int stride, va_list args)
+static int op_int(tc__cmd op, void * m, int count, int stride, va_list args)
 {
 	switch (op) {
 	case tccmd_find: {
@@ -252,7 +310,7 @@ int op_int(tc__cmd op, void * m, int count, int stride, va_list args)
 	}
 }
 
-int op_sorted_int(tc__cmd op, void * m, int count, int stride, va_list args)
+static int op_sorted_int(tc__cmd op, void * m, int count, int stride, va_list args)
 {
 	switch (op) {
 	case tccmd_find: {
@@ -276,7 +334,33 @@ int op_sorted_int(tc__cmd op, void * m, int count, int stride, va_list args)
 }
 
 
-int op_charStar(tc__cmd op, void * m, int count, int stride, va_list args)
+static int op_hash_int(tc__cmd op, void * container, int count, int stride, va_list args)
+{
+	switch (op) {
+	case tccmd_hfind: {
+		int needle = va_arg(args, int);
+		void * first_key = va_arg(args, void*);
+		void * flags = va_arg(args, void*);
+
+		int i;
+		for (i = 0; i < count; i++) {
+			if (needle == (*(int*)first_key)) {
+				return i;
+			}
+			else
+				if (needle < (*(int*)first_key)) {
+					return -(i + 1);
+				}
+			first_key = (char*)first_key + stride;
+		}
+		return -(count + 1);
+	}
+					 break;
+	default: assert(!"UnKnown Op"); return 0;
+	}
+}
+
+static int op_charStar(tc__cmd op, void * m, int count, int stride, va_list args)
 {
 	switch (op) {
 	case tccmd_find: {
@@ -295,7 +379,7 @@ int op_charStar(tc__cmd op, void * m, int count, int stride, va_list args)
 	}
 }
 
-int op_sorted_charStar(tc__cmd op, void * m, int count, int stride, va_list args)
+static int op_sorted_charStar(tc__cmd op, void * m, int count, int stride, va_list args)
 {
 	switch (op) {
 	case tccmd_find: {
