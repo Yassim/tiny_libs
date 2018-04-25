@@ -25,11 +25,11 @@ typedef struct {
 
 typedef int(__cdecl *TTestOp)(TTestCtx* tt_ctx);
 
-typedef struct TTest_ {
+typedef __declspec(align(32)) struct TTest_ {
     const char* Name;
     TTestOp     Op;
     const char* File;
-    unsigned int not_used;
+    void* notUsed;
 } TTest;
 
 #define tiny_test(FIXTURE, NAME)                \
@@ -38,7 +38,8 @@ TEST_DATA_TYPES                                 \
 const TTest TTest_ ## FIXTURE ## _ ## NAME = {  \
     #FIXTURE "." #NAME,                         \
     TTest_ ## FIXTURE ## _ ## NAME ## _op,      \
-    __FILE__, '*end'                            \
+    __FILE__ ,                                  \
+    0                                           \
 };                                              \
 int __cdecl TTest_ ## FIXTURE ## _ ## NAME ## _op (TTestCtx* tt_ctx)   
 
@@ -106,6 +107,8 @@ int __cdecl TTest_ ## FIXTURE ## _ ## NAME ## _op (TTestCtx* tt_ctx)
 
 
 #ifdef TINY_TEST__IMPLIMENTATION
+#include <assert.h>
+#include <stdint.h>
 #include <stdio.h>
 
 // ++ WINDOWS
@@ -156,7 +159,10 @@ int tt_runtests(int argc, char** argv)
             }
             printf("\n");
         }
-        i++;
+        //i++;
+        // NOTE: for some reason, the alignment is not carrying through to 
+        // the pointer type. Hence the next line for the step.
+        i = (const void*)(__alignof(TTest) +(intptr_t)i); 
     }
 
     printf("Tests Run %d\n"
